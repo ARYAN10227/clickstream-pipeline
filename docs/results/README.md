@@ -9,33 +9,23 @@ linked result files, which were written by the tools in `tools/`.
 
 ## Baseline
 
-`make bench RATE=20000 DURATION=300` with **1 consumer replica**, run on 2026-10-19.
+`make bench RATE=20000 DURATION=300` with **1 consumer replica** and 1 producer process,
+run twice on 2026-10-19 on the same machine.
 
-Files: [`bench-20261019T194024.md`](bench-20261019T194024.md),
-[`bench-20261019T194024.json`](bench-20261019T194024.json).
+| run | achieved produce rate | events sent | consumer throughput | max lag | final lag | p50 / p95 / p99 / max | sustained throughput | p99 < 2,000 ms |
+|---|---|---|---|---|---|---|---|---|
+| [`20261019T194024`](bench-20261019T194024.md) ([json](bench-20261019T194024.json)) | 19,999.3 events/s | 5,999,802 | 20,019.4 events/s | 8,059 | 0 | 237.0 / 363.0 / 407.0 / 1,047 ms | **FAIL** | PASS |
+| [`20261019T195118`](bench-20261019T195118.md) ([json](bench-20261019T195118.json)) | 20,000.0 events/s | 6,000,000 | 20,051.1 events/s | 8,564 | 0 | 230.0 / 353.0 / 391.0 / 993 ms | PASS | PASS |
 
-| metric | value |
-|---|---|
-| target rate | 20,000 events/s for 300 s (1 producer process) |
-| achieved produce rate | 19,999 events/s (5,999,802 sent, 0 delivery errors) |
-| consumer throughput | 20,019.4 events/s |
-| rows stored (FINAL) | 5,999,802 |
-| max consumer lag | 8,059 |
-| final consumer lag | 0 |
-| latency p50 / p95 / p99 / max | 237.0 / 363.0 / 407.0 / 1,047 ms |
+The first run missed the sustained-throughput target by 1 event/s because the load
+generator stopped at the 300 s mark without sending its final tick's events; that was fixed
+in the previous commit (`fix(loadgen): send exactly rate x duration events`), and the
+re-run sent exactly 6,000,000 events and passed both SPEC targets. The targets themselves
+were not changed: sustained throughput >= 20,000 events/s for 300 s with the lag drained,
+and end-to-end latency p99 < 2,000 ms.
 
-| SPEC target | requirement | measured | result |
-|---|---|---|---|
-| sustained throughput | >= 20,000 events/s for 300 s, lag drained | 19,999 events/s for 300 s, final lag 0 | **FAIL** |
-| end-to-end latency p99 | < 2,000 ms | 407.0 ms | PASS |
-
-**The sustained-throughput target FAILED** in this run: the achieved produce rate was
-19,999 events/s against a target of at least 20,000 (5,999,802 events sent in the run;
-6,000,000 would be exactly 20,000/s for 300 s). The consumer kept up: its throughput was
-20,019.4 events/s, the lag never exceeded 8,059 messages and drained to 0, and all
-5,999,802 produced events were stored. The shortfall is on the producing side, where the
-load generator stops at the 300 s mark. The latency target passed with a large margin
-(p99 407.0 ms vs 2,000 ms).
+In both runs the consumer kept up (throughput above 20,000 events/s, lag drained to 0) and
+every produced event was stored exactly once (`count() FINAL` equals events sent).
 
 Machine: a cloud VM (sandboxed Linux container) with an Intel(R) Xeon(R) Processor @
 2.10GHz, 4 vCPUs, 15.7 GiB RAM, Ubuntu 24.04.5 LTS, Docker Engine 29.8.2. Redpanda,
