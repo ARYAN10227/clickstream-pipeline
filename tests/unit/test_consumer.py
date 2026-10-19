@@ -5,7 +5,7 @@ from typing import Any
 
 import orjson
 import pytest
-from confluent_kafka import KafkaError
+from confluent_kafka import KafkaError, KafkaException
 
 from clickpipe.config import Settings
 from clickpipe.consumer import ClickConsumer, process_batch
@@ -218,3 +218,60 @@ def test_close_closes_kafka_consumer() -> None:
     consumer, _, calls, _, _ = _consumer([])
     consumer.close()
     assert calls == ["close"]
+
+
+class StopDuringInsertSink(FakeSink):
+    """Simulates SIGTERM arriving while a batch is being inserted."""
+
+    def __init__(self, calls: list[str], stop: threading.Event) -> None:
+        super().__init__(calls)
+        self.stop = stop
+
+    def insert_rows(self, rows: list[tuple[Any, ...]], dedup_token: str | None = None) -> int:
+        self.stop.set()
+        return super().insert_rows(rows, dedup_token)
+
+
+def test_stop_during_processing_finishes_current_batch_then_exits() -> None:
+    calls: list[str] = []
+    stop = threading.Event()
+    batches = [[FakeMessage(_live_value(), offset=0)], [FakeMessage(_live_value(), offset=1)]]
+    kafka = FakeConsumer(batches, threading.Event(), calls)  # never sets the real stop itself
+    consumer = ClickConsumer(
+        Settings(clicks_topic="clicks"),
+        StopDuringInsertSink(calls, stop),  # type: ignore[arg-type]
+        FakeDlq(calls),  # type: ignore[arg-type]
+        consumer=kafka,  # type: ignore[arg-type]
+    )
+    consumer.run(stop)
+    assert calls == ["insert", "commit"]  # first batch finished and committed
+    assert len(kafka.batches) == 1  # second batch never polled
+
+
+class FlakyCommitConsumer(FakeConsumer):
+    def __init__(self, batches: list[list[FakeMessage]], stop: threading.Event, calls: list[str]):
+        super().__init__(batches, stop, calls)
+        self.fail_next_commit = True
+
+    def commit(self, asynchronous: bool = True) -> None:
+        if self.fail_next_commit:
+            self.fail_next_commit = False
+            self.calls.append("commit-failed")
+            raise KafkaException(KafkaError(KafkaError.REBALANCE_IN_PROGRESS))
+        super().commit(asynchronous)
+
+
+def test_commit_failure_is_logged_and_loop_continues(caplog: pytest.LogCaptureFixture) -> None:
+    calls: list[str] = []
+    stop = threading.Event()
+    batches = [[FakeMessage(_live_value(), offset=0)], [FakeMessage(_live_value(), offset=1)]]
+    consumer = ClickConsumer(
+        Settings(clicks_topic="clicks"),
+        FakeSink(calls),  # type: ignore[arg-type]
+        FakeDlq(calls),  # type: ignore[arg-type]
+        consumer=FlakyCommitConsumer(batches, stop, calls),  # type: ignore[arg-type]
+    )
+    with caplog.at_level("WARNING", logger="clickpipe.consumer"):
+        consumer.run(stop)
+    assert calls == ["insert", "commit-failed", "insert", "commit"]
+    assert "offset commit failed, batch will be redelivered" in caplog.text
