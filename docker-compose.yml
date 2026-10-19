@@ -93,7 +93,7 @@ services:
       KAFKA_BOOTSTRAP: redpanda:9092
       CLICKHOUSE_HOST: clickhouse
     ports:
-      - "9108:9108"  # Prometheus metrics (METRICS_PORT)
+      - "9108-9110:9108"  # Prometheus metrics (METRICS_PORT); one host port per replica, up to 3
     # GeoIP country lookup: mount a GeoLite2 database and set GEOIP_DB_PATH=/data/GeoLite2-Country.mmdb
     # volumes:
     #   - ./GeoLite2-Country.mmdb:/data/GeoLite2-Country.mmdb:ro  # never committed (*.mmdb is gitignored)

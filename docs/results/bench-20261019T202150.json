@@ -1,0 +1,77 @@
+{
+  "bench_id": "20261019T202150",
+  "machine": {
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "nproc": 4,
+    "ram_gib": 15.7,
+    "os": "Ubuntu 24.04.5 LTS, kernel 6.18.44-fc-v139",
+    "docker": "Engine 29.8.2",
+    "consumer_replicas": 3,
+    "cloud_vm": "likely (hypervisor detected, cloud vendor unknown)"
+  },
+  "run": {
+    "prefix": "bf5588",
+    "started_at": "2026-10-19T20:21:50+00:00",
+    "target_rate": 30000,
+    "duration_s": 120.0,
+    "procs": 1,
+    "produced": 3600000,
+    "delivery_errors": 0,
+    "achieved_produce_rate": 29997.5,
+    "max_lag": 16230,
+    "final_lag": 0,
+    "lag_samples": [
+      0,
+      10266,
+      14112,
+      12934,
+      11894,
+      6744,
+      9318,
+      13895,
+      13382,
+      12176,
+      9513,
+      10984,
+      11303,
+      16230,
+      10604,
+      9364,
+      12155,
+      15977,
+      9738,
+      8829,
+      9057,
+      14676,
+      8932,
+      8530,
+      0
+    ]
+  },
+  "latency": {
+    "selection": "prefix bf5588",
+    "rows": 3600000,
+    "p50_ms": 363.0,
+    "p95_ms": 640.4,
+    "p99_ms": 747.1,
+    "max_ms": 893,
+    "first_ingested": "2026-10-19T20:21:51.969",
+    "last_ingested": "2026-10-19T20:23:51.899",
+    "ingest_span_s": 119.93,
+    "consumer_throughput_eps": 30017.5
+  },
+  "checks": [
+    {
+      "name": "sustained throughput",
+      "target": ">= 20,000 events/s for 300 s, lag drained",
+      "actual": "29,998 events/s (min of produce 29,998, consumer 30,018) for 120 s, final lag 0",
+      "passed": false
+    },
+    {
+      "name": "end-to-end latency p99",
+      "target": "< 2,000 ms",
+      "actual": "747.1 ms",
+      "passed": true
+    }
+  ]
+}
