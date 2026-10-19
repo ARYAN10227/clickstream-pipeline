@@ -37,7 +37,9 @@ node_modules
 # OS
 .DS_Store
 
-# replay manifests and verify reports from trial runs (real results are committed explicitly later)
+# trial-run outputs (replay manifests, verify/crash/bench reports) (real results are committed explicitly later)
 docs/results/replay-*.json
 docs/results/verify-*.md
 docs/results/crash-*.md
+docs/results/bench-*.json
+docs/results/bench-*.md

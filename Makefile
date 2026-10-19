@@ -6,6 +6,7 @@ N ?= 1000000
 DUP ?= 0.05
 BAD ?= 0.01
 LATE ?= 0.01
+PROCS ?= 1
 
 .DEFAULT_GOAL := help
 
@@ -56,8 +57,8 @@ ch: ## Open a ClickHouse client shell
 smoke: ## Check Redpanda topics and the ClickHouse clicks table are ready
 	uv run python tools/smoke.py
 
-bench: ## Run throughput benchmark (RATE, DURATION)
-	@echo "not implemented yet (step 38)"; exit 1
+bench: ## Benchmark at RATE for DURATION seconds vs SPEC targets (RATE, DURATION, PROCS)
+	uv run python tools/bench.py --rate $(RATE) --duration $(DURATION) --procs $(PROCS)
 
 replay: ## Replay N events with duplicates/bad/late records, then verify (N, DUP, BAD, LATE)
 	uv run python tools/replay.py --n $(N) --dup $(DUP) --bad $(BAD) --late $(LATE)
