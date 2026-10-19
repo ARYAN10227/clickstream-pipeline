@@ -1,11 +1,13 @@
 """Click event schema (SPEC "Event schema") and mapping to analytics.clicks rows."""
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
 import orjson
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
@@ -43,6 +45,89 @@ class ClickEvent(BaseModel):
 def parse_event(raw: bytes) -> ClickEvent:
     """Decode and validate one Kafka message value; raises on malformed or invalid input."""
     return ClickEvent.model_validate(orjson.loads(raw))
+
+
+class DlqReason(StrEnum):
+    """Why a record was routed to the dead-letter topic (SPEC MVP feature 5)."""
+
+    BAD_JSON = "bad_json"
+    SCHEMA_INVALID = "schema_invalid"
+    MISSING_FIELD = "missing_field"
+    LATE_EVENT = "late_event"
+    FUTURE_EVENT = "future_event"
+
+
+@dataclass(frozen=True)
+class Valid:
+    """A record that passed every data-quality rule."""
+
+    event: ClickEvent
+
+
+@dataclass(frozen=True)
+class Invalid:
+    """A record that failed a data-quality rule; `error` is safe to log and store."""
+
+    reason: DlqReason
+    error: str
+
+
+MAX_ERROR_LEN = 256
+REDACTED = "<redacted>"
+
+
+def _safe_error(text: str, payload: object) -> str:
+    """Strip the event's ip from an error message and cap its length."""
+    ip = payload.get("ip") if isinstance(payload, dict) else None
+    if isinstance(ip, str) and ip:
+        text = text.replace(ip, REDACTED)
+    if len(text) > MAX_ERROR_LEN:
+        text = text[: MAX_ERROR_LEN - 3] + "..."
+    return text
+
+
+def _describe(exc: ValidationError) -> str:
+    """Summarise validation errors by field and message, never echoing input values."""
+    parts = []
+    for err in exc.errors(include_url=False, include_input=False):
+        field = ".".join(str(part) for part in err["loc"]) or "<root>"
+        parts.append(f"{field}: {err['msg']}")
+    return "; ".join(parts)
+
+
+def validate(raw: bytes, now_ms: int, late_threshold_s: int, future_skew_s: int) -> Valid | Invalid:
+    """Apply the data-quality rules to one raw message value; never raises.
+
+    Events exactly at the late or future threshold are accepted.
+    """
+    try:
+        payload = orjson.loads(raw)
+    except orjson.JSONDecodeError as exc:
+        return Invalid(DlqReason.BAD_JSON, _safe_error(f"bad JSON: {exc}", None))
+    if not isinstance(payload, dict):
+        return Invalid(
+            DlqReason.BAD_JSON, f"top-level JSON value is {type(payload).__name__}, not an object"
+        )
+
+    try:
+        event = ClickEvent.model_validate(payload)
+    except ValidationError as exc:
+        missing = any(err["type"] == "missing" for err in exc.errors())
+        reason = DlqReason.MISSING_FIELD if missing else DlqReason.SCHEMA_INVALID
+        return Invalid(reason, _safe_error(_describe(exc), payload))
+
+    lag_ms = now_ms - event.event_time
+    if lag_ms > late_threshold_s * 1000:
+        return Invalid(
+            DlqReason.LATE_EVENT,
+            f"event_time is {lag_ms} ms old, limit is {late_threshold_s * 1000} ms",
+        )
+    if -lag_ms > future_skew_s * 1000:
+        return Invalid(
+            DlqReason.FUTURE_EVENT,
+            f"event_time is {-lag_ms} ms in the future, limit is {future_skew_s * 1000} ms",
+        )
+    return Valid(event)
 
 
 def ms_to_datetime(ms: int) -> datetime:
