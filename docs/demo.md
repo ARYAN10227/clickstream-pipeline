@@ -10,8 +10,7 @@ cp .env.example .env     # first time only
 make up                  # builds and starts everything, then prints the smoke-check table
 ```
 
-Wait for `5/5 checks passed`. Open two terminals (**A** and **B**) and a browser at
-http://localhost:3000. Log in as `admin` with the `GRAFANA_ADMIN_PASSWORD` from `.env`.
+Wait for `5/5 checks passed`. Open a terminal and a browser at http://localhost:3000. Log in as `admin` with the `GRAFANA_ADMIN_PASSWORD` from `.env`.
 
 ## 1. Pipeline Ops dashboard (empty, waiting)
 
@@ -19,17 +18,7 @@ In Grafana, open **Dashboards → Clickpipe → Pipeline Ops**. Say: *"this is t
 health: throughput, lag, DLQ by reason, end-to-end latency, batch size, Redpanda produce
 rate."* It refreshes every few seconds.
 
-## 2. Start the crash test early (terminal B)
-
-```sh
-make crash-test
-```
-
-It produces events, `kill -9`s the consumer container mid-stream, restarts it, then waits
-for the restarted consumer to get its partitions back (the killed consumer's group session
-has to time out first) before verifying. Leave it running; its report is step 6.
-
-## 3. Load and watch it move (terminal A)
+## 2. Load and watch it move
 
 ```sh
 make bench RATE=20000 DURATION=30
@@ -44,14 +33,14 @@ When the bench finishes it prints PASS/FAIL against the SPEC targets. **The thro
 check shows FAIL for this short run by design:** the SPEC target requires 300 s. Point at the
 real 300 s baseline instead ([docs/results/README.md](results/README.md)).
 
-## 4. Click Analytics dashboard
+## 3. Click Analytics dashboard
 
 Open **Dashboards → Clickpipe → Click Analytics** and set the time range to the last 15
 minutes. Show clicks per minute, the top short codes, referrers, devices and browsers.
 Then pick one value in the **Short code** dropdown to filter every panel. Say: *"every count
 here uses `uniqExact(event_id)`, so duplicates can never inflate it."*
 
-## 5. Replay with duplicates and bad records (terminal A)
+## 4. Replay with duplicates and bad records
 
 ```sh
 make replay N=100000
@@ -65,15 +54,23 @@ late events. Then it waits for lag 0 and prints the expected-vs-actual table. Sh
 
 The last line should be `7/7 checks passed`.
 
-## 6. Crash test report (terminal B)
+## 5. Crash test (last, because it kills the consumer)
 
-By now terminal B shows the crash-test report:
+```sh
+make crash-test
+```
+
+This runs last on purpose: it `kill -9`s the consumer container, so running it alongside
+steps 2–4 would distort their lag and latency. It produces events, kills the consumer
+mid-stream and restarts it. Then it waits for the restarted consumer to get its partitions
+back (the killed consumer's group session has to time out first) and verifies. While it
+waits, explain what it checks. The report shows:
 - the SIGKILL and restart timestamps;
 - **zero loss**: `uniqExact(event_id)` equals produced;
 - **zero duplicates**: `count() FINAL` equals produced;
 - "duplicates collapsed", the number of redelivered rows that deduplication absorbed.
 
-If it is still waiting for the consumer group, show a recorded run instead:
+If the 2 minutes run out before it finishes, show a recorded run instead:
 [docs/results/crash-20261019T185757.md](results/crash-20261019T185757.md).
 
 ## Afterwards
@@ -82,5 +79,5 @@ If it is still waiting for the consumer group, show a recorded run instead:
 make down     # stops the stack and keeps data volumes
 ```
 
-The reports from steps 3, 5 and 6 are written to `docs/results/` (gitignored for trial runs).
+The reports from steps 2, 4 and 5 are written to `docs/results/` (gitignored for trial runs).
 For why each guarantee holds, see [architecture.md](architecture.md).
