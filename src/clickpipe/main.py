@@ -11,6 +11,7 @@ import orjson
 
 from clickpipe.config import get_settings
 from clickpipe.consumer import ClickConsumer
+from clickpipe.dlq import DlqProducer
 from clickpipe.sink import ClickHouseSink
 
 log = logging.getLogger("clickpipe")
@@ -52,10 +53,12 @@ def main() -> int:
     signal.signal(signal.SIGINT, request_stop)
 
     sink = ClickHouseSink(settings)
-    consumer = ClickConsumer(settings, sink)
+    dlq = DlqProducer(settings)
+    consumer = ClickConsumer(settings, sink, dlq)
     log.info(
-        "consumer started: topic=%s group=%s bootstrap=%s clickhouse=%s:%d batch=%d/%dms",
+        "consumer started: topic=%s dlq=%s group=%s bootstrap=%s clickhouse=%s:%d batch=%d/%dms",
         settings.clicks_topic,
+        settings.dlq_topic,
         settings.consumer_group,
         settings.kafka_bootstrap,
         settings.clickhouse_host,
@@ -71,6 +74,10 @@ def main() -> int:
         exit_code = 1
     finally:
         consumer.close()
+        try:
+            dlq.close()
+        except Exception:
+            log.exception("DLQ producer did not flush cleanly on shutdown")
         sink.close()
         log.info("consumer closed cleanly")
     return exit_code

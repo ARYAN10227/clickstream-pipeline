@@ -1,4 +1,5 @@
 import threading
+import time
 import uuid
 from typing import Any
 
@@ -8,22 +9,29 @@ from confluent_kafka import KafkaError
 
 from clickpipe.config import Settings
 from clickpipe.consumer import ClickConsumer, process_batch
-from clickpipe.schema import CLICK_COLUMNS
+from clickpipe.dlq import DlqFlushError
+from clickpipe.schema import CLICK_COLUMNS, DlqReason
 
 KAFKA_PARTITION = CLICK_COLUMNS.index("kafka_partition")
 KAFKA_OFFSET = CLICK_COLUMNS.index("kafka_offset")
+NOW_MS = 1_700_000_000_000
 
 
-def _valid_value() -> bytes:
-    return orjson.dumps(
-        {
-            "event_id": str(uuid.uuid4()),
-            "short_code": "abc123",
-            "event_time": 1700000000123,
-            "produced_at": 1700000000456,
-            "schema_version": 1,
-        }
-    )
+def _value(**overrides: object) -> bytes:
+    event: dict[str, object] = {
+        "event_id": str(uuid.uuid4()),
+        "short_code": "abc123",
+        "event_time": NOW_MS,
+        "produced_at": NOW_MS,
+        "schema_version": 1,
+    }
+    return orjson.dumps(event | overrides)
+
+
+def _live_value() -> bytes:
+    """A valid event stamped with the real current time (run() uses the real clock)."""
+    now = time.time_ns() // 1_000_000
+    return _value(event_time=now, produced_at=now)
 
 
 class FakeMessage:
@@ -85,78 +93,114 @@ class FakeSink:
         return len(rows)
 
 
-def _run(batches: list[list[FakeMessage]], fail: bool = False) -> tuple[list[str], FakeSink]:
+class FakeDlq:
+    def __init__(self, calls: list[str], fail_flush: bool = False) -> None:
+        self.calls, self.fail_flush = calls, fail_flush
+        self.sent: list[tuple[Any, DlqReason, str]] = []
+
+    def send(self, message: Any, reason: DlqReason, error: str) -> None:
+        self.calls.append("dlq.send")
+        self.sent.append((message, reason, error))
+
+    def flush(self, timeout_s: float = 10.0) -> None:
+        self.calls.append("dlq.flush")
+        if self.fail_flush:
+            raise DlqFlushError("1 DLQ message(s) still queued")
+
+
+def _consumer(
+    batches: list[list[FakeMessage]], sink_fails: bool = False, flush_fails: bool = False
+) -> tuple[ClickConsumer, threading.Event, list[str], FakeSink, FakeDlq]:
     calls: list[str] = []
     stop = threading.Event()
-    sink = FakeSink(calls, fail=fail)
-    consumer = ClickConsumer(Settings(), sink, consumer=FakeConsumer(batches, stop, calls))  # type: ignore[arg-type]
-    consumer.run(stop)
-    return calls, sink
+    sink, dlq = FakeSink(calls, fail=sink_fails), FakeDlq(calls, fail_flush=flush_fails)
+    consumer = ClickConsumer(
+        Settings(),
+        sink,  # type: ignore[arg-type]
+        dlq,  # type: ignore[arg-type]
+        consumer=FakeConsumer(batches, stop, calls),  # type: ignore[arg-type]
+    )
+    return consumer, stop, calls, sink, dlq
+
+
+def _process(messages: list[FakeMessage]) -> tuple[list[Any], list[Any]]:
+    return process_batch(messages, NOW_MS, late_threshold_s=300, future_skew_s=60)  # type: ignore[arg-type]
 
 
 def test_valid_messages_become_rows_with_partition_and_offset() -> None:
-    rows, invalid = process_batch(
-        [FakeMessage(_valid_value(), partition=2, offset=10), FakeMessage(_valid_value(), 5, 77)]  # type: ignore[list-item]
-    )
+    rows, invalid = _process([FakeMessage(_value(), 2, 10), FakeMessage(_value(), 5, 77)])
     assert invalid == []
     assert [(r[KAFKA_PARTITION], r[KAFKA_OFFSET]) for r in rows] == [(2, 10), (5, 77)]
     assert all(len(r) == len(CLICK_COLUMNS) for r in rows)
 
 
-def test_invalid_json_goes_to_invalid_list() -> None:
-    bad = FakeMessage(b'{"event_id": ', partition=1, offset=3)
-    rows, invalid = process_batch([bad, FakeMessage(_valid_value())])  # type: ignore[list-item]
+def test_invalid_records_get_reason_codes() -> None:
+    bad_json = FakeMessage(b'{"event_id": ', partition=1, offset=3)
+    late = FakeMessage(_value(event_time=NOW_MS - 301_000))
+    rows, invalid = _process([bad_json, late, FakeMessage(_value())])
     assert len(rows) == 1
-    assert len(invalid) == 1
-    assert invalid[0][0] is bad
-    assert invalid[0][1].startswith("bad JSON")
-
-
-def test_schema_violation_goes_to_invalid_list() -> None:
-    value = orjson.loads(_valid_value()) | {"short_code": "x" * 17}
-    rows, invalid = process_batch([FakeMessage(orjson.dumps(value))])  # type: ignore[list-item]
-    assert rows == []
-    assert invalid[0][1].startswith("invalid short_code")
+    assert [(m, reason) for m, reason, _ in invalid] == [
+        (bad_json, DlqReason.BAD_JSON),
+        (late, DlqReason.LATE_EVENT),
+    ]
+    assert all(isinstance(error, str) and error for _, _, error in invalid)
 
 
 def test_error_messages_are_skipped() -> None:
     eof = FakeMessage(error=KafkaError(KafkaError._PARTITION_EOF))
     broken = FakeMessage(error=KafkaError(KafkaError._TRANSPORT))
-    rows, invalid = process_batch([eof, broken, FakeMessage(_valid_value())])  # type: ignore[list-item]
+    rows, invalid = _process([eof, broken, FakeMessage(_value())])
     assert len(rows) == 1
     assert invalid == []
 
 
-def test_run_commits_after_insert() -> None:
-    calls, sink = _run(
-        [[FakeMessage(_valid_value(), offset=0)], [FakeMessage(_valid_value(), offset=1)]]
-    )
-    assert calls == ["insert", "commit", "insert", "commit"]
-    assert len(sink.rows) == 2
+def test_run_order_is_insert_dlq_send_dlq_flush_commit() -> None:
+    batch = [FakeMessage(_live_value(), offset=0), FakeMessage(b"not json", offset=1)]
+    consumer, stop, calls, sink, dlq = _consumer([batch])
+    consumer.run(stop)
+    assert calls == ["insert", "dlq.send", "dlq.flush", "commit"]
+    assert len(sink.rows) == 1
+    assert dlq.sent[0][1] is DlqReason.BAD_JSON
 
 
-def test_run_does_not_commit_when_insert_fails() -> None:
-    calls: list[str] = []
-    stop = threading.Event()
-    consumer = ClickConsumer(
-        Settings(),
-        FakeSink(calls, fail=True),  # type: ignore[arg-type]
-        consumer=FakeConsumer([[FakeMessage(_valid_value())]], stop, calls),  # type: ignore[arg-type]
-    )
+def test_run_does_not_commit_when_dlq_flush_fails() -> None:
+    batch = [FakeMessage(_live_value()), FakeMessage(b"not json")]
+    consumer, stop, calls, _, _ = _consumer([batch], flush_fails=True)
+    with pytest.raises(DlqFlushError):
+        consumer.run(stop)
+    assert calls == ["insert", "dlq.send", "dlq.flush"]
+
+
+def test_run_does_not_send_dlq_or_commit_when_insert_fails() -> None:
+    batch = [FakeMessage(_live_value()), FakeMessage(b"not json")]
+    consumer, stop, calls, _, dlq = _consumer([batch], sink_fails=True)
     with pytest.raises(ConnectionError, match="ClickHouse is down"):
         consumer.run(stop)
     assert calls == ["insert"]
+    assert dlq.sent == []
 
 
-def test_run_empty_poll_calls_neither_insert_nor_commit() -> None:
-    calls, _ = _run([[], []])
+def test_run_only_invalid_batch_skips_insert_then_commits() -> None:
+    batch = [FakeMessage(b"not json", offset=0), FakeMessage(_value(schema_version=2), offset=1)]
+    consumer, stop, calls, _, dlq = _consumer([batch])
+    consumer.run(stop)
+    assert calls == ["dlq.send", "dlq.send", "dlq.flush", "commit"]
+    assert [reason for _, reason, _ in dlq.sent] == [DlqReason.BAD_JSON, DlqReason.SCHEMA_INVALID]
+
+
+def test_run_only_valid_batch_skips_dlq() -> None:
+    consumer, stop, calls, _, _ = _consumer([[FakeMessage(_live_value())]])
+    consumer.run(stop)
+    assert calls == ["insert", "commit"]
+
+
+def test_run_empty_poll_does_nothing() -> None:
+    consumer, stop, calls, _, _ = _consumer([[], []])
+    consumer.run(stop)
     assert calls == []
 
 
 def test_close_closes_kafka_consumer() -> None:
-    calls: list[str] = []
-    consumer = ClickConsumer(
-        Settings(), FakeSink(calls), consumer=FakeConsumer([], threading.Event(), calls)
-    )  # type: ignore[arg-type]
+    consumer, _, calls, _, _ = _consumer([])
     consumer.close()
     assert calls == ["close"]
