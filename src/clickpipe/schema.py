@@ -9,6 +9,8 @@ from uuid import UUID
 import orjson
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from clickpipe.enrich import country, parse_ua, referrer_domain
+
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 # analytics.clicks columns in table order, minus ingested_at (filled by ClickHouse).
@@ -136,16 +138,20 @@ def ms_to_datetime(ms: int) -> datetime:
 
 
 def to_row(event: ClickEvent, partition: int, offset: int) -> tuple[Any, ...]:
-    """Map an event plus its Kafka position to a row in CLICK_COLUMNS order."""
+    """Map an event plus its Kafka position to an enriched row in CLICK_COLUMNS order.
+
+    The ip is only used for the country lookup and is not part of the row.
+    """
+    device, browser = parse_ua(event.user_agent)
     return (
         event.event_id,
         event.short_code,
         ms_to_datetime(event.event_time),
         ms_to_datetime(event.produced_at),
-        "",  # referrer_domain (enrichment comes later)
-        "unknown",  # device
-        "unknown",  # browser
-        "ZZ",  # country
+        referrer_domain(event.referrer),
+        device,
+        browser,
+        country(event.ip),
         event.schema_version,
         partition,
         offset,

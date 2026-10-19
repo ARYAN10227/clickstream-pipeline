@@ -30,6 +30,14 @@ def test_insert_100_rows(ch_client: Client, fresh_table: str) -> None:
     assert sink.insert_rows(_rows(100)) == 100
     assert ch_client.command(f"SELECT count() FROM {fresh_table} FINAL") == 100
 
+    # Enriched columns are populated from the fake user agents and referrers.
+    known_device, known_browser, with_referrer, devices = ch_client.query(
+        f"SELECT countIf(device != 'unknown'), countIf(browser != 'unknown'),"
+        f" countIf(referrer_domain != ''), groupUniqArray(device) FROM {fresh_table}"
+    ).result_rows[0]
+    assert known_device > 0 and known_browser > 0 and with_referrer > 0
+    assert {"desktop", "mobile"} <= set(devices)
+
 
 def test_ingested_at_filled_by_clickhouse(ch_client: Client, fresh_table: str) -> None:
     ClickHouseSink(Settings(), table=fresh_table, client=ch_client).insert_rows(_rows(10))

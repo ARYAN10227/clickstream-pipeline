@@ -46,15 +46,40 @@ def test_to_row_matches_click_columns() -> None:
     by_column = dict(zip(CLICK_COLUMNS, row, strict=True))
     assert by_column["event_id"] == event.event_id
     assert by_column["short_code"] == "abc123"
-    assert by_column["referrer_domain"] == ""
-    assert by_column["device"] == "unknown"
+    assert by_column["referrer_domain"] == "example.com"  # from https://example.com/page
+    assert by_column["device"] == "unknown"  # bare "Mozilla/5.0" names no OS or device
     assert by_column["browser"] == "unknown"
-    assert by_column["country"] == "ZZ"
+    assert by_column["country"] == "ZZ"  # no GeoIP database configured
     assert by_column["schema_version"] == 1
     assert by_column["kafka_partition"] == 2
     assert by_column["kafka_offset"] == 99
     assert "ingested_at" not in CLICK_COLUMNS
     assert "ip" not in CLICK_COLUMNS
+
+
+def test_to_row_enriches_device_browser_and_referrer() -> None:
+    ua = (
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 "
+        "(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+    )
+    raw = _raw(user_agent=ua, referrer="https://www.LinkedIn.com/feed/", ip="198.51.100.1")
+    row = dict(zip(CLICK_COLUMNS, to_row(parse_event(raw), 0, 0), strict=True))
+
+    assert (row["device"], row["browser"]) == ("mobile", "Mobile Safari")
+    assert row["referrer_domain"] == "linkedin.com"
+    assert "198.51.100.1" not in row.values()
+
+
+def test_to_row_without_optional_fields() -> None:
+    raw = _raw(user_agent=None, referrer=None, ip=None)
+    row = dict(zip(CLICK_COLUMNS, to_row(parse_event(raw), 0, 0), strict=True))
+
+    assert (row["referrer_domain"], row["device"], row["browser"], row["country"]) == (
+        "",
+        "unknown",
+        "unknown",
+        "ZZ",
+    )
 
 
 def test_ms_to_datetime_is_exact() -> None:
