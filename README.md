@@ -59,6 +59,15 @@ replica** unless stated. Every value links to the file it was copied from.
 | Invalid records routed to the DLQ | 20,000 of 20,000 (bad_json 3,334, missing_field 3,333, schema_invalid 3,333, late_event 10,000): **100%** | [verify-20261019T185634](docs/results/verify-20261019T185634.md) |
 | Test coverage (unit + integration, 154 tests) | **82.46%** | [coverage.txt](docs/results/coverage.txt) |
 
+These results were measured before the v1.0.0 review fixes:
+- the dedup token now includes an `event_id` hash;
+- late and future events are now judged against `produced_at`;
+- ports are now published on localhost only.
+
+The fixes do not change the outcome for these workloads, and the replay and crash e2e tests
+pass after them. Throughput and latency have not been re-measured since; the token hash adds
+a small amount of work per batch.
+
 There is more detail in [docs/results/README.md](docs/results/README.md). The first baseline run
 missed the throughput target by 1 event/s because of a load-generator bug; that run is kept
 in the record. [correctness.md](docs/results/correctness.md) and
