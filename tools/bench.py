@@ -231,28 +231,41 @@ def machine_specs(cloud_override: str) -> dict[str, Any]:
     }
 
 
+def split_counts(total: int, procs: int) -> list[int]:
+    """Split `total` events over `procs` producers so the parts sum exactly to `total`."""
+    base, extra = divmod(total, procs)
+    return [base + (1 if i < extra else 0) for i in range(procs)]
+
+
 def start_producers(
     rate: float, duration: float, procs: int, prefix: str, run_id: str
 ) -> list[subprocess.Popen[str]]:
-    """Start `procs` loadgen processes that split the rate evenly."""
-    cmd = [
-        sys.executable,
-        str(REPO_ROOT / "tools" / "loadgen.py"),
-        "--duration",
-        str(duration),
-        "--rate",
-        str(rate / procs),
-        "--code-prefix",
-        prefix,
-        "--run-id",
-        run_id,
-    ]
-    return [
-        subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=REPO_ROOT
+    """Start `procs` loadgen processes sending exactly round(rate * duration) events in total.
+
+    Each process gets an exact --count and a proportional --rate, so all of them run for
+    `duration` seconds and their counts sum to the total.
+    """
+    total = round(rate * duration)
+    popens = []
+    for count in split_counts(total, procs):
+        cmd = [
+            sys.executable,
+            str(REPO_ROOT / "tools" / "loadgen.py"),
+            "--count",
+            str(count),
+            "--rate",
+            repr(rate * count / total),
+            "--code-prefix",
+            prefix,
+            "--run-id",
+            run_id,
+        ]
+        popens.append(
+            subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=REPO_ROOT
+            )
         )
-        for _ in range(procs)
-    ]
+    return popens
 
 
 def main(argv: list[str] | None = None) -> int:

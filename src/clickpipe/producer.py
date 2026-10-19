@@ -54,15 +54,23 @@ def send_events(
     rate: float,
     duration_s: float | None = None,
     headers: list[tuple[str, bytes]] | None = None,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> LoadResult:
-    """Produce events at `rate`/s until `events` is exhausted or `duration_s` passes, then flush.
+    """Produce events at `rate`/s, then flush.
 
-    Events are pulled lazily, so a generator can stamp event_time when each event is due.
-    produced_at is set right before produce(). Sending is paced in 10 ms ticks; each event
-    is keyed by its short_code. Messages still undelivered after flush count as errors.
+    With duration_s, exactly round(rate * duration_s) events are sent (or fewer if `events`
+    runs out first); otherwise until `events` is exhausted. Event i is due at i / rate
+    seconds after the start, checked in 10 ms ticks, so the final partial tick still sends
+    its remaining events. LoadResult.elapsed_s is the sending time (first to last produce),
+    excluding the final flush. Events are pulled lazily, so a generator can stamp
+    event_time when each event is due; produced_at is set right before produce(). Each
+    event is keyed by its short_code. Messages still undelivered after flush count as
+    delivery errors. `clock` and `sleep` are injectable for tests.
     """
     if rate <= 0:
         raise ValueError("rate must be > 0")
+    total = None if duration_s is None else round(rate * duration_s)
     errors = 0
 
     def on_delivery(err: KafkaError | None, _msg: Message) -> None:
@@ -73,14 +81,14 @@ def send_events(
     source = iter(events)
     sent = 0
     exhausted = False
-    start = time.monotonic()
+    start = clock()
+    last_produce = start
     next_tick = start
-    while not exhausted:
-        elapsed = time.monotonic() - start
-        if duration_s is not None and elapsed >= duration_s:
-            break
-        target = int(rate * elapsed) + 1  # events due by now (send the first one immediately)
-        while sent < target:
+    while not exhausted and (total is None or sent < total):
+        due = int(rate * (clock() - start)) + 1  # events 0..due-1 are due (first one at t=0)
+        if total is not None:
+            due = min(due, total)
+        while sent < due:
             event = next(source, None)
             if event is None:
                 exhausted = True
@@ -89,11 +97,13 @@ def send_events(
             value = orjson.dumps(event)
             produce_with_retry(producer, topic, event["short_code"], value, headers, on_delivery)
             sent += 1
+            last_produce = clock()
         producer.poll(0)
+        if exhausted or (total is not None and sent >= total):
+            break
         next_tick += TICK_S
-        delay = next_tick - time.monotonic()
-        if delay > 0 and not exhausted:
-            time.sleep(delay)
+        delay = next_tick - clock()
+        if delay > 0:
+            sleep(delay)
     remaining = producer.flush(30)
-    elapsed = time.monotonic() - start
-    return LoadResult(sent=sent, elapsed_s=elapsed, delivery_errors=errors + remaining)
+    return LoadResult(sent=sent, elapsed_s=last_produce - start, delivery_errors=errors + remaining)
