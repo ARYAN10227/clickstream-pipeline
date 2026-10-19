@@ -36,6 +36,7 @@ fmt: ## Format code and apply ruff autofixes
 up: ## Start the local stack (Redpanda, ClickHouse, Prometheus, Grafana)
 	docker compose up -d --wait redpanda clickhouse
 	docker compose run --rm redpanda-init
+	$(MAKE) smoke
 
 down: ## Stop the local stack
 	docker compose down
@@ -53,8 +54,8 @@ topics: ## List Redpanda topics and describe clicks
 ch: ## Open a ClickHouse client shell
 	docker compose exec clickhouse sh -c 'clickhouse-client --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB"'
 
-smoke: ## Send a few events end to end and check they land in ClickHouse
-	@echo "not implemented yet (step 8)"; exit 1
+smoke: ## Check Redpanda topics and the ClickHouse clicks table are ready
+	uv run python tools/smoke.py
 
 bench: ## Run throughput benchmark (RATE, DURATION)
 	@echo "not implemented yet (step 38)"; exit 1
