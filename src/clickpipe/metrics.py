@@ -7,7 +7,6 @@ start_http_server), or a fresh CollectorRegistry in tests.
 import logging
 import time
 from collections.abc import Sequence
-from datetime import datetime
 from typing import Any
 
 from confluent_kafka import Consumer
@@ -69,12 +68,12 @@ class Metrics:
         self._next_lag_refresh = 0.0
 
     def observe_e2e_latency(
-        self, produced_at: Sequence[datetime], now_s: float | None = None
+        self, produced_at_ms: Sequence[int], now_s: float | None = None
     ) -> None:
-        """Record now - produced_at for each inserted event."""
-        now_s = time.time() if now_s is None else now_s
-        for ts in produced_at:
-            self.e2e_latency.observe(max(0.0, now_s - ts.timestamp()))
+        """Record now - produced_at (epoch milliseconds) for each inserted event."""
+        now_ms = (time.time() if now_s is None else now_s) * 1000
+        for ms in produced_at_ms:
+            self.e2e_latency.observe(max(0.0, (now_ms - ms) / 1000))
 
     def maybe_refresh_lag(self, consumer: Consumer, now_s: float | None = None) -> bool:
         """Refresh the lag gauge from watermarks vs position, at most every LAG_REFRESH_S.

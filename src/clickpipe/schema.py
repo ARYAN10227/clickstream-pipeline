@@ -140,14 +140,17 @@ def ms_to_datetime(ms: int) -> datetime:
 def to_row(event: ClickEvent, partition: int, offset: int) -> tuple[Any, ...]:
     """Map an event plus its Kafka position to an enriched row in CLICK_COLUMNS order.
 
+    event_time and produced_at stay integer epoch milliseconds: for DateTime64(3) columns
+    clickhouse-connect writes ints directly as ticks, which avoids building datetime
+    objects only to have the driver convert them back (see docs/results/profile-notes.md).
     The ip is only used for the country lookup and is not part of the row.
     """
     device, browser = parse_ua(event.user_agent)
     return (
         event.event_id,
         event.short_code,
-        ms_to_datetime(event.event_time),
-        ms_to_datetime(event.produced_at),
+        event.event_time,
+        event.produced_at,
         referrer_domain(event.referrer),
         device,
         browser,

@@ -1,6 +1,5 @@
 import threading
 import time
-from datetime import UTC, datetime
 from typing import Any
 
 from confluent_kafka import TopicPartition
@@ -46,8 +45,8 @@ def test_consumer_records_batch_metrics() -> None:
 def test_e2e_latency_buckets() -> None:
     metrics = _metrics()
     now = 1_700_000_010.0
-    produced = [datetime.fromtimestamp(now - lag, UTC) for lag in (0.04, 0.3, 1.2, 9.0)]
-    metrics.observe_e2e_latency(produced, now_s=now)
+    produced_ms = [round((now - lag) * 1000) for lag in (0.04, 0.3, 1.2, 9.0)]
+    metrics.observe_e2e_latency(produced_ms, now_s=now)
 
     def le(bound: str) -> float | None:
         return sample(metrics, "clickpipe_e2e_latency_seconds_bucket", {"le": bound})

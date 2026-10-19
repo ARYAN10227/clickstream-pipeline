@@ -5,7 +5,7 @@ import orjson
 import pytest
 from pydantic import ValidationError
 
-from clickpipe.schema import CLICK_COLUMNS, ClickEvent, parse_event, to_row
+from clickpipe.schema import CLICK_COLUMNS, ClickEvent, ms_to_datetime, parse_event, to_row
 
 
 def _event(**overrides: object) -> dict[str, object]:
@@ -82,12 +82,18 @@ def test_to_row_without_optional_fields() -> None:
     )
 
 
-def test_ms_to_datetime_is_exact() -> None:
+def test_to_row_keeps_timestamps_as_epoch_ms_ints() -> None:
     row = dict(zip(CLICK_COLUMNS, to_row(parse_event(_raw()), 0, 0), strict=True))
 
-    assert row["event_time"] == datetime(2023, 11, 14, 22, 13, 20, 123000, tzinfo=UTC)
-    assert row["produced_at"] == datetime(2023, 11, 14, 22, 13, 20, 456000, tzinfo=UTC)
-    assert row["event_time"].tzinfo is UTC
+    # DateTime64(3) ticks are epoch milliseconds; clickhouse-connect writes ints as-is.
+    assert row["event_time"] == 1700000000123
+    assert row["produced_at"] == 1700000000456
+    assert type(row["event_time"]) is int and type(row["produced_at"]) is int
+
+
+def test_ms_to_datetime_is_exact() -> None:
+    assert ms_to_datetime(1700000000123) == datetime(2023, 11, 14, 22, 13, 20, 123000, tzinfo=UTC)
+    assert ms_to_datetime(1700000000123).tzinfo is UTC
 
 
 @pytest.mark.parametrize(
