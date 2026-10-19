@@ -20,6 +20,7 @@ clickpipe = "clickpipe.main:main"
 
 [dependency-groups]
 dev = [
+    "py-spy>=0.4.2",
     "pytest",
     "pytest-cov",
     "ruff",
