@@ -11,6 +11,8 @@ dependencies = [
     "pydantic-settings",
     "orjson",
     "prometheus-client",
+    "ua-parser>=1.0.2",
+    "maxminddb>=3.2.0",
 ]
 
 [project.scripts]
