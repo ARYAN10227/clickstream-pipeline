@@ -1,7 +1,7 @@
 """Rate-controlled producing of click events, shared by the load generator and tests."""
 
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,6 +28,23 @@ class LoadResult:
 def now_ms() -> int:
     """Current wall-clock time in epoch milliseconds."""
     return time.time_ns() // 1_000_000
+
+
+def produce_with_retry(
+    producer: Producer,
+    topic: str,
+    key: str | bytes | None,
+    value: bytes,
+    headers: list[tuple[str, bytes]] | None,
+    on_delivery: Callable[[KafkaError | None, Message], None],
+) -> None:
+    """produce() one message, waiting for queue space whenever the local queue is full."""
+    while True:
+        try:
+            producer.produce(topic, key=key, value=value, headers=headers, on_delivery=on_delivery)
+            return
+        except BufferError:
+            producer.poll(0.05)  # local queue full: serve delivery callbacks, then retry
 
 
 def send_events(
@@ -70,18 +87,7 @@ def send_events(
                 break
             event["produced_at"] = now_ms()
             value = orjson.dumps(event)
-            while True:
-                try:
-                    producer.produce(
-                        topic,
-                        key=event["short_code"],
-                        value=value,
-                        headers=headers,
-                        on_delivery=on_delivery,
-                    )
-                    break
-                except BufferError:
-                    producer.poll(0.05)  # local queue full: serve callbacks, then retry
+            produce_with_retry(producer, topic, event["short_code"], value, headers, on_delivery)
             sent += 1
         producer.poll(0)
         next_tick += TICK_S

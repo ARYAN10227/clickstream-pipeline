@@ -36,3 +36,6 @@ node_modules
 
 # OS
 .DS_Store
+
+# replay manifests from trial runs (real results are committed explicitly later)
+docs/results/replay-*.json
