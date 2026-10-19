@@ -1,0 +1,38 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+wheels/
+
+# Virtual environments
+.venv
+venv/
+
+# Environment
+.env
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov
+coverage.xml
+
+# Tool caches
+.ruff_cache/
+.mypy_cache/
+
+# GeoIP databases
+*.mmdb
+
+# Node
+node_modules
+
+# OS
+.DS_Store
