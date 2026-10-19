@@ -14,6 +14,7 @@ from typing import Any
 from confluent_kafka import Consumer, KafkaError, Message
 
 from clickpipe.config import Settings
+from clickpipe.dedup import build_dedup_token
 from clickpipe.dlq import DlqProducer
 from clickpipe.schema import DlqReason, Invalid, to_row, validate
 from clickpipe.sink import ClickHouseSink
@@ -85,7 +86,12 @@ class ClickConsumer:
             )
             # Any exception below propagates before the commit, so the batch is redelivered.
             if rows:
-                self.sink.insert_rows(rows)
+                # Token from the messages that produced rows: a retry of this exact batch
+                # gets the same token and ClickHouse skips the duplicate insert (ADR-0003).
+                invalid_ids = {id(msg) for msg, _, _ in invalid}
+                valid = [m for m in messages if m.error() is None and id(m) not in invalid_ids]
+                token = build_dedup_token(self.settings.clicks_topic, valid)
+                self.sink.insert_rows(rows, dedup_token=token)
             for msg, reason, error in invalid:
                 self.dlq.send(msg, reason, error)
             if invalid:

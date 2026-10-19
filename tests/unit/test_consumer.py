@@ -84,9 +84,11 @@ class FakeSink:
     def __init__(self, calls: list[str], fail: bool = False) -> None:
         self.calls, self.fail = calls, fail
         self.rows: list[tuple[Any, ...]] = []
+        self.tokens: list[str | None] = []
 
-    def insert_rows(self, rows: list[tuple[Any, ...]], settings: Any = None) -> int:
+    def insert_rows(self, rows: list[tuple[Any, ...]], dedup_token: str | None = None) -> int:
         self.calls.append("insert")
+        self.tokens.append(dedup_token)
         if self.fail:
             raise ConnectionError("ClickHouse is down")
         self.rows.extend(rows)
@@ -115,7 +117,7 @@ def _consumer(
     stop = threading.Event()
     sink, dlq = FakeSink(calls, fail=sink_fails), FakeDlq(calls, fail_flush=flush_fails)
     consumer = ClickConsumer(
-        Settings(),
+        Settings(clicks_topic="clicks"),
         sink,  # type: ignore[arg-type]
         dlq,  # type: ignore[arg-type]
         consumer=FakeConsumer(batches, stop, calls),  # type: ignore[arg-type]
@@ -152,6 +154,18 @@ def test_error_messages_are_skipped() -> None:
     rows, invalid = _process([eof, broken, FakeMessage(_value())])
     assert len(rows) == 1
     assert invalid == []
+
+
+def test_run_passes_dedup_token_from_valid_messages_only() -> None:
+    batch = [
+        FakeMessage(_live_value(), partition=1, offset=7),
+        FakeMessage(b"not json", partition=1, offset=8),  # invalid: excluded from the token
+        FakeMessage(_live_value(), partition=0, offset=3),
+        FakeMessage(error=KafkaError(KafkaError._PARTITION_EOF), partition=2, offset=99),
+    ]
+    consumer, stop, _, sink, _ = _consumer([batch])
+    consumer.run(stop)
+    assert sink.tokens == ["clicks|p0:3-3|p1:7-7"]
 
 
 def test_run_order_is_insert_dlq_send_dlq_flush_commit() -> None:

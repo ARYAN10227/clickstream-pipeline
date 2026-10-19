@@ -27,7 +27,7 @@ def test_insert_called_once_with_click_columns() -> None:
     client = FakeClient()
     rows = [tuple(range(len(CLICK_COLUMNS))), tuple(range(len(CLICK_COLUMNS)))]
 
-    sent = _sink(client).insert_rows(rows, settings={"insert_deduplication_token": "t1"})
+    sent = _sink(client).insert_rows(rows)
 
     assert sent == 2
     assert len(client.inserts) == 1
@@ -35,7 +35,17 @@ def test_insert_called_once_with_click_columns() -> None:
     assert table == "analytics.t"
     assert inserted == rows
     assert kwargs["column_names"] == CLICK_COLUMNS
-    assert kwargs["settings"] == {"insert_deduplication_token": "t1"}
+    assert kwargs["settings"] is None
+
+
+def test_dedup_token_sets_both_clickhouse_settings() -> None:
+    client = FakeClient()
+    _sink(client).insert_rows([tuple(range(len(CLICK_COLUMNS)))], dedup_token="clicks|p0:1-1")
+
+    assert client.inserts[0][2]["settings"] == {
+        "insert_deduplicate": 1,
+        "insert_deduplication_token": "clicks|p0:1-1",
+    }
 
 
 def test_empty_list_does_not_call_insert() -> None:
