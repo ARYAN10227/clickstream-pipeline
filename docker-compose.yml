@@ -55,5 +55,33 @@ services:
         ensure_topic clicks-dlq 1 1209600000  # 14 days
         rpk topic list $$BROKERS
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.9.21.9
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickpipe}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickpipe_dev}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      # *.sql here runs once, on first start with an empty data volume
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - clickhouse-client --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --query "SELECT 1"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
 volumes:
   redpanda-data:
+  clickhouse-data:

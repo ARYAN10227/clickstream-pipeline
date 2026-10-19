@@ -34,7 +34,8 @@ fmt: ## Format code and apply ruff autofixes
 	uv run ruff format . && uv run ruff check --fix .
 
 up: ## Start the local stack (Redpanda, ClickHouse, Prometheus, Grafana)
-	docker compose up -d --wait
+	docker compose up -d --wait redpanda clickhouse
+	docker compose run --rm redpanda-init
 
 down: ## Stop the local stack
 	docker compose down
@@ -50,7 +51,7 @@ topics: ## List Redpanda topics and describe clicks
 	docker compose exec redpanda rpk topic describe clicks
 
 ch: ## Open a ClickHouse client shell
-	@echo "not implemented yet (step 6)"; exit 1
+	docker compose exec clickhouse sh -c 'clickhouse-client --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB"'
 
 smoke: ## Send a few events end to end and check they land in ClickHouse
 	@echo "not implemented yet (step 8)"; exit 1
