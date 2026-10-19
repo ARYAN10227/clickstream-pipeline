@@ -132,7 +132,7 @@ def run_checks(settings: Settings) -> list[Result]:
             raise CheckFailed("skipped: ClickHouse is not reachable")
         table = f"{settings.clickhouse_db}.clicks"
         if str(ch[0].command(f"EXISTS TABLE {table}")) != "1":
-            raise CheckFailed(f"table {table} does not exist (see sql/001_create_clicks.sql)")
+            raise CheckFailed(f"table {table} does not exist (see sql/init/001_create_clicks.sql)")
         return table
 
     results.append(_run("Redpanda reachable", redpanda_reachable))

@@ -73,7 +73,7 @@ services:
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       # *.sql here runs once, on first start with an empty data volume
-      - ./sql:/docker-entrypoint-initdb.d:ro
+      - ./sql/init:/docker-entrypoint-initdb.d:ro
       - ./infra/clickhouse/users.d/grafana.xml:/etc/clickhouse-server/users.d/grafana.xml:ro
     healthcheck:
       test:

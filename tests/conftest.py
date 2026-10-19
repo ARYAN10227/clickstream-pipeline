@@ -16,7 +16,7 @@ from confluent_kafka.admin import AdminClient, NewTopic
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE_FILE = ROOT / "docker-compose.yml"
-CREATE_CLICKS_SQL = ROOT / "sql" / "001_create_clicks.sql"
+CREATE_CLICKS_SQL = ROOT / "sql" / "init" / "001_create_clicks.sql"
 TIMEOUT_S = 30
 
 
