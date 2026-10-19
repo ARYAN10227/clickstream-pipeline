@@ -1,0 +1,56 @@
+# make cov (2026-10-19T20:31:47Z, commit e72154e)
+# uv run pytest tests/unit tests/integration --cov=clickpipe --cov-report=term-missing --cov-fail-under=80
+============================= test session starts ==============================
+platform linux -- Python 3.13.16, pytest-9.1.1, pluggy-1.7.0
+rootdir: /home/user/clickstream-pipeline
+configfile: pyproject.toml
+plugins: cov-7.1.0
+collected 154 items
+
+tests/unit/test_bench.py .......                                         [  4%]
+tests/unit/test_config.py ....                                           [  7%]
+tests/unit/test_consumer.py .............                                [ 15%]
+tests/unit/test_crash_report.py ....                                     [ 18%]
+tests/unit/test_dedup.py .....                                           [ 21%]
+tests/unit/test_dlq.py ......                                            [ 25%]
+tests/unit/test_enrich.py ..........................                     [ 42%]
+tests/unit/test_fake.py .....                                            [ 45%]
+tests/unit/test_latency_report.py ......                                 [ 49%]
+tests/unit/test_metrics.py ....                                          [ 51%]
+tests/unit/test_pacing.py .....                                          [ 55%]
+tests/unit/test_replay_plan.py .......                                   [ 59%]
+tests/unit/test_retry.py .........                                       [ 65%]
+tests/unit/test_schema.py ...........                                    [ 72%]
+tests/unit/test_sink.py ....                                             [ 75%]
+tests/unit/test_validate.py ......................                       [ 89%]
+tests/unit/test_verify.py .....                                          [ 92%]
+tests/unit/test_version.py .                                             [ 93%]
+tests/integration/test_dlq_routing.py .                                  [ 94%]
+tests/integration/test_fixtures.py ..                                    [ 95%]
+tests/integration/test_idempotency.py ...                                [ 97%]
+tests/integration/test_shutdown.py .                                     [ 98%]
+tests/integration/test_sink.py ...                                       [100%]
+
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.13.16-final-0 _______________
+
+Name                          Stmts   Miss  Cover   Missing
+-----------------------------------------------------------
+src/clickpipe/__init__.py         1      0   100%
+src/clickpipe/config.py          39      0   100%
+src/clickpipe/consumer.py        85      0   100%
+src/clickpipe/dedup.py           13      0   100%
+src/clickpipe/dlq.py             31      2    94%   53-54
+src/clickpipe/enrich.py          65      4    94%   49, 76-79
+src/clickpipe/fake.py            43      2    95%   67, 91
+src/clickpipe/main.py            58     58     0%   3-106
+src/clickpipe/metrics.py         47      0   100%
+src/clickpipe/producer.py        61      4    93%   46-47, 72, 79
+src/clickpipe/schema.py          74      1    99%   87
+src/clickpipe/sink.py            49      1    98%   115
+src/clickpipe/stackcheck.py      44     35    20%   18-21, 26-38, 43-54, 59-76
+-----------------------------------------------------------
+TOTAL                           610    107    82%
+Required test coverage of 80% reached. Total coverage: 82.46%
+============================= 154 passed in 21.38s =============================
+# exit code: 0
