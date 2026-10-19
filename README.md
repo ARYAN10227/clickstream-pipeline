@@ -44,34 +44,28 @@ the batch sequence and every failure scenario.
 
 ## Results
 
-All results were measured on **one cloud VM** with an Intel(R) Xeon(R) Processor @ 2.10GHz,
-**4 vCPUs** and 15.7 GiB RAM. The **whole stack ran on that one machine**: Redpanda,
-ClickHouse, the consumer, Prometheus, Grafana and the load generator. There was **1 consumer
-replica** unless stated. Every value links to the file it was copied from.
+Measured on **v1.0.0** ([final-v1.md](docs/results/final-v1.md)). Everything ran on **one
+cloud VM** with an Intel(R) Xeon(R) Processor @ 2.10GHz, **4 vCPUs** and 15.7 GiB RAM. The
+**whole stack ran on that one machine**: Redpanda, ClickHouse, the consumer, Prometheus,
+Grafana and the load generator. There was **1 consumer replica**. Every value links to the
+file it was copied from.
 
 | measure | result | source |
 |---|---|---|
-| Sustained throughput (target ≥ 20,000 events/s for 300 s) | produce 20,000.0 events/s, consumer 20,031.7 events/s, 6,000,000 events, final lag 0: **PASS** | [bench-20261019T201001](docs/results/bench-20261019T201001.md) |
-| End-to-end latency (produced_at → ingested_at; target p99 < 2 s) | p50 209.0 ms, p95 327.0 ms, **p99 381.0 ms**, max 779 ms: **PASS** | [bench-20261019T201001](docs/results/bench-20261019T201001.md) |
-| Headroom at 30,000 events/s for 120 s (three 1-replica runs) | consumer 30,025.8 / 30,224.9 / 30,090.3 events/s, lag drained to 0 in all; p99 634.0 / 2,094.3 (cold-started consumer) / 464.1 ms | [201529](docs/results/bench-20261019T201529.md), [201902](docs/results/bench-20261019T201902.md), [202410](docs/results/bench-20261019T202410.md) |
-| Duplicates after a 1,000,000-event replay with 50,000 injected duplicates | `count() FINAL` 1,000,000 = `uniqExact(event_id)` 1,000,000 = unique events sent: **0 duplicates** | [verify-20261019T185634](docs/results/verify-20261019T185634.md), [replay manifest](docs/results/replay-20261019T185634.json) |
-| Loss after `kill -9` of the consumer mid-stream and restart | 300,000 produced, 300,000 unique stored, 300,000 `FINAL`: **0 lost, 0 duplicates** | [crash-20261019T185757](docs/results/crash-20261019T185757.md) |
-| Invalid records routed to the DLQ | 20,000 of 20,000 (bad_json 3,334, missing_field 3,333, schema_invalid 3,333, late_event 10,000): **100%** | [verify-20261019T185634](docs/results/verify-20261019T185634.md) |
-| Test coverage (unit + integration, 154 tests) | **82.46%** | [coverage.txt](docs/results/coverage.txt) |
+| Sustained throughput (target ≥ 20,000 events/s for 300 s) | produce 20,000.0 events/s, consumer 20,083.1 events/s, 6,000,000 events, final lag 0: **PASS** | [bench-20261019T204939](docs/results/bench-20261019T204939.md) |
+| End-to-end latency (produced_at → ingested_at; target p99 < 2 s) | p50 215.0 ms, p95 341.0 ms, **p99 397.1 ms**, max 1,757 ms: **PASS** | [bench-20261019T204939](docs/results/bench-20261019T204939.md) |
+| Headroom at 30,000 events/s for 120 s (after a warm-up) | produce 29,967.5 events/s, consumer 29,968.3 events/s, 3,600,000 events, lag drained to 0; p50 257.0 / p95 764.0 / p99 929.1 ms. The throughput check is **FAIL** because that target needs 300 s and this run was 120 s (the producer was also slightly below 30,000/s). p99 is PASS. | [bench-20261019T205515](docs/results/bench-20261019T205515.md) |
+| Duplicates after a 1,000,000-event replay with 50,000 injected duplicates | `count() FINAL` 1,000,000 = `uniqExact(event_id)` 1,000,000 = unique events sent: **0 duplicates** | [verify-20261019T205727](docs/results/verify-20261019T205727.md), [replay manifest](docs/results/replay-20261019T205727.json) |
+| Loss after `kill -9` of the consumer mid-stream and restart | 300,000 produced, 300,000 unique stored, 300,000 `FINAL`: **0 lost, 0 duplicates** (4,401 redelivered rows collapsed by dedup) | [crash-20261019T205905](docs/results/crash-20261019T205905.md) |
+| Invalid records routed to the DLQ | 20,000 of 20,000 (bad_json 3,334, missing_field 3,333, schema_invalid 3,333, late_event 10,000): **100%** | [verify-20261019T205727](docs/results/verify-20261019T205727.md) |
+| Test coverage (unit + integration, 157 tests) | **82.66%** | [coverage.txt](docs/results/coverage.txt) |
 
-These results were measured before the v1.0.0 review fixes:
-- the dedup token now includes an `event_id` hash;
-- late and future events are now judged against `produced_at`;
-- ports are now published on localhost only.
-
-The fixes do not change the outcome for these workloads, and the replay and crash e2e tests
-pass after them. Throughput and latency have not been re-measured since; the token hash adds
-a small amount of work per batch.
-
-There is more detail in [docs/results/README.md](docs/results/README.md). The first baseline run
-missed the throughput target by 1 event/s because of a load-generator bug; that run is kept
-in the record. [correctness.md](docs/results/correctness.md) and
-[scaling.md](docs/results/scaling.md) cover the rest.
+**History:** earlier runs, including the first baseline that missed the throughput target by
+1 event/s because of a load-generator bug (since fixed), the pre-fix correctness runs, the
+performance experiment and the 1 vs 3 replicas comparison, are kept in
+[docs/results/README.md](docs/results/README.md), [correctness.md](docs/results/correctness.md),
+[perf-20261019T201758.md](docs/results/perf-20261019T201758.md) and
+[scaling.md](docs/results/scaling.md).
 
 ## Features
 
