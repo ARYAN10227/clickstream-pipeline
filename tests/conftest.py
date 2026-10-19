@@ -6,7 +6,7 @@ Without a working Docker daemon the container fixtures skip, so unit tests still
 
 import re
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import clickhouse_connect
@@ -40,6 +40,16 @@ def _require_docker() -> None:
         pytest.skip(
             f"Docker is not available, skipping integration test ({exc.__class__.__name__})"
         )
+
+
+def _connect(clickhouse: object) -> Client:
+    """A new clickhouse-connect client for the session ClickHouse container."""
+    return clickhouse_connect.get_client(
+        host=clickhouse.get_container_host_ip(),  # type: ignore[attr-defined]
+        port=int(clickhouse.get_exposed_port(8123)),  # type: ignore[attr-defined]
+        username="clickpipe",
+        password="clickpipe_test",
+    )
 
 
 def _sql_statements(path: Path) -> list[str]:
@@ -89,15 +99,30 @@ def clickhouse() -> Iterator[object]:
 @pytest.fixture(scope="session")
 def ch_client(clickhouse: object) -> Client:
     """clickhouse-connect client with database analytics and table analytics.clicks created."""
-    client = clickhouse_connect.get_client(
-        host=clickhouse.get_container_host_ip(),  # type: ignore[attr-defined]
-        port=int(clickhouse.get_exposed_port(8123)),  # type: ignore[attr-defined]
-        username="clickpipe",
-        password="clickpipe_test",
-    )
+    client = _connect(clickhouse)
     for statement in _sql_statements(CREATE_CLICKS_SQL):
         client.command(statement)
     return client
+
+
+@pytest.fixture
+def new_ch_client(ch_client: Client, clickhouse: object) -> Iterator[Callable[[], Client]]:
+    """Factory for extra ClickHouse clients, all closed when the test ends.
+
+    A clickhouse-connect client is one ClickHouse session and must not be used from two
+    threads at once ("concurrent queries within the same session"). Give code that runs in
+    a background thread (e.g. a ClickConsumer's sink) its own client from this factory.
+    """
+    clients: list[Client] = []
+
+    def make() -> Client:
+        client = _connect(clickhouse)
+        clients.append(client)
+        return client
+
+    yield make
+    for client in clients:
+        client.close()
 
 
 @pytest.fixture

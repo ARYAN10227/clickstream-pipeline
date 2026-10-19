@@ -5,7 +5,7 @@ import threading
 import time
 import uuid
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import orjson
 import pytest
@@ -89,7 +89,12 @@ def _read_all(bootstrap: str, topic: str, expected: int) -> list[dict[str, bytes
 
 
 def test_invalid_and_late_events_are_routed_to_dlq(
-    kafka_bootstrap: str, fresh_topic: str, dlq_topic: str, ch_client: Client, fresh_table: str
+    kafka_bootstrap: str,
+    fresh_topic: str,
+    dlq_topic: str,
+    ch_client: Client,
+    fresh_table: str,
+    new_ch_client: Callable[[], Client],
 ) -> None:
     rng = random.Random(5)
     invalid = _invalid_records(rng)
@@ -110,7 +115,7 @@ def test_invalid_and_late_events_are_routed_to_dlq(
     )
     consumer = ClickConsumer(
         settings,
-        ClickHouseSink(settings, table=fresh_table, client=ch_client),
+        ClickHouseSink(settings, table=fresh_table, client=new_ch_client()),
         DlqProducer(settings),
     )
     stop = threading.Event()

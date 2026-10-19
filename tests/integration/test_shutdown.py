@@ -4,6 +4,7 @@ import random
 import threading
 import time
 import uuid
+from collections.abc import Callable
 
 import orjson
 import pytest
@@ -24,7 +25,11 @@ PARTITIONS = 3  # fresh_topic is created with 3 partitions
 
 
 def test_stop_leaves_nothing_uncommitted(
-    kafka_bootstrap: str, fresh_topic: str, ch_client: Client, fresh_table: str
+    kafka_bootstrap: str,
+    fresh_topic: str,
+    ch_client: Client,
+    fresh_table: str,
+    new_ch_client: Callable[[], Client],
 ) -> None:
     settings = Settings(
         kafka_bootstrap=kafka_bootstrap,
@@ -35,7 +40,7 @@ def test_stop_leaves_nothing_uncommitted(
     )
     consumer = ClickConsumer(
         settings,
-        ClickHouseSink(settings, table=fresh_table, client=ch_client),
+        ClickHouseSink(settings, table=fresh_table, client=new_ch_client()),
         DlqProducer(settings),
     )
     stop = threading.Event()
