@@ -16,7 +16,8 @@ events on crashes or double-counting them on replays.
 4. Idempotent storage: producer-assigned UUID `event_id`, ReplacingMergeTree keyed on it,
    plus batch-level insert deduplication tokens.
 5. Data-quality rules with DLQ reason codes: bad_json, schema_invalid, missing_field,
-   late_event (older than 300 s), future_event (more than 60 s ahead).
+   late_event (older than 300 s), future_event (more than 60 s ahead), both measured
+   between the event's own event_time and produced_at, never against the consumer's clock.
 6. Observability: Prometheus metrics and Grafana dashboards (Click Analytics, Pipeline Ops).
 7. Correctness tools: 1M-event replay with duplicates; kill -9 crash/restart test.
 8. One-command run (`make up`), tests, benchmarks (`make bench`), GitHub Actions CI.

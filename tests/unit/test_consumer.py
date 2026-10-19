@@ -126,7 +126,7 @@ def _consumer(
 
 
 def _process(messages: list[FakeMessage]) -> tuple[list[Any], list[Any]]:
-    return process_batch(messages, NOW_MS, late_threshold_s=300, future_skew_s=60)  # type: ignore[arg-type]
+    return process_batch(messages, late_threshold_s=300, future_skew_s=60)  # type: ignore[arg-type]
 
 
 def test_valid_messages_become_rows_with_partition_and_offset() -> None:

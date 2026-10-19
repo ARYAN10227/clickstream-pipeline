@@ -43,10 +43,11 @@ def _invalid_records(rng: random.Random) -> list[tuple[str, bytes]]:
         ("missing_field", orjson.dumps(missing2)),
         ("schema_invalid", orjson.dumps(make_event(rng, now) | {"short_code": "x" * 17})),
         ("schema_invalid", orjson.dumps(make_event(rng, now) | {"schema_version": 2})),
-        ("late_event", orjson.dumps(make_event(rng, now - 400_000))),
-        ("late_event", orjson.dumps(make_event(rng, now - 3_600_000))),
-        ("future_event", orjson.dumps(make_event(rng, now + 120_000))),
-        ("future_event", orjson.dumps(make_event(rng, now + 3_600_000))),
+        # late/future are judged against produced_at: clicked at event_time, produced now
+        ("late_event", orjson.dumps(make_event(rng, now - 400_000) | {"produced_at": now})),
+        ("late_event", orjson.dumps(make_event(rng, now - 3_600_000) | {"produced_at": now})),
+        ("future_event", orjson.dumps(make_event(rng, now + 120_000) | {"produced_at": now})),
+        ("future_event", orjson.dumps(make_event(rng, now + 3_600_000) | {"produced_at": now})),
     ]
 
 

@@ -65,7 +65,7 @@ def test_records_get_the_expected_validation_result(plan) -> None:  # type: igno
         "schema_invalid": DlqReason.SCHEMA_INVALID,
     }
     for item in plan.items:
-        result = validate(item.value, NOW_MS, late_threshold_s=300, future_skew_s=60)
+        result = validate(item.value, late_threshold_s=300, future_skew_s=60)
         if expected[item.kind] is None:
             assert isinstance(result, Valid), item
             assert result.event.short_code.startswith("rabcde")

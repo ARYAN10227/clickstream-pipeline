@@ -97,10 +97,15 @@ def _describe(exc: ValidationError) -> str:
     return "; ".join(parts)
 
 
-def validate(raw: bytes, now_ms: int, late_threshold_s: int, future_skew_s: int) -> Valid | Invalid:
+def validate(raw: bytes, late_threshold_s: int, future_skew_s: int) -> Valid | Invalid:
     """Apply the data-quality rules to one raw message value; never raises.
 
-    Events exactly at the late or future threshold are accepted.
+    Lateness and future skew are measured within the event, against its own produced_at:
+    late if produced_at - event_time > late_threshold_s, future if
+    event_time - produced_at > future_skew_s. So the result depends only on the message
+    bytes, never on when (or how often) it is consumed: pipeline lag or an outage does not
+    turn valid clicks into late events, and a redelivered batch is classified exactly as the
+    first time. Events exactly at a threshold are accepted.
     """
     try:
         payload = orjson.loads(raw)
@@ -118,16 +123,16 @@ def validate(raw: bytes, now_ms: int, late_threshold_s: int, future_skew_s: int)
         reason = DlqReason.MISSING_FIELD if missing else DlqReason.SCHEMA_INVALID
         return Invalid(reason, _safe_error(_describe(exc), payload))
 
-    lag_ms = now_ms - event.event_time
+    lag_ms = event.produced_at - event.event_time
     if lag_ms > late_threshold_s * 1000:
         return Invalid(
             DlqReason.LATE_EVENT,
-            f"event_time is {lag_ms} ms old, limit is {late_threshold_s * 1000} ms",
+            f"event_time is {lag_ms} ms before produced_at, limit is {late_threshold_s * 1000} ms",
         )
     if -lag_ms > future_skew_s * 1000:
         return Invalid(
             DlqReason.FUTURE_EVENT,
-            f"event_time is {-lag_ms} ms in the future, limit is {future_skew_s * 1000} ms",
+            f"event_time is {-lag_ms} ms after produced_at, limit is {future_skew_s * 1000} ms",
         )
     return Valid(event)
 

@@ -20,6 +20,10 @@ removed by deduplication. ([ADR-0002](decisions/0002-at-least-once-plus-idempote
    valid event or an `Invalid(reason, error)` with one of `bad_json`, `missing_field`,
    `schema_invalid`, `late_event` or `future_event`. Kafka error events are skipped; partition
    EOF is ignored.
+   - Late and future are measured between the event's own `event_time` and `produced_at`, not
+     against the consumer's clock. The result depends only on the message bytes, so a
+     redelivered batch is classified exactly as the first time, and a backlog after an
+     outage is stored rather than dead-lettered.
 4. **Enrich.** [`to_row`](../src/clickpipe/schema.py) adds referrer domain, device, browser
    and country ([enrich.py](../src/clickpipe/enrich.py)). The IP is used only for the GeoIP
    lookup and is never stored.

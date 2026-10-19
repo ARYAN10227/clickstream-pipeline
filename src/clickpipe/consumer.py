@@ -36,7 +36,7 @@ def _describe(partitions: list[TopicPartition]) -> str:
 
 
 def process_batch(
-    messages: Sequence[Message], now_ms: int, late_threshold_s: int, future_skew_s: int
+    messages: Sequence[Message], late_threshold_s: int, future_skew_s: int
 ) -> tuple[list[tuple[Any, ...]], list[tuple[Message, DlqReason, str]]]:
     """Split a polled batch into ClickHouse rows and (message, reason, error) for invalid ones."""
     rows: list[tuple[Any, ...]] = []
@@ -47,7 +47,7 @@ def process_batch(
             if err.code() != KafkaError._PARTITION_EOF:
                 log.warning("skipping Kafka error message: %s", err)
             continue
-        result = validate(msg.value() or b"", now_ms, late_threshold_s, future_skew_s)
+        result = validate(msg.value() or b"", late_threshold_s, future_skew_s)
         if isinstance(result, Invalid):
             log.warning(
                 "invalid record %s[%d]@%d: %s: %s",
@@ -120,7 +120,6 @@ class ClickConsumer:
             self.metrics.batch_size.observe(consumed)
             rows, invalid = process_batch(
                 messages,
-                now_ms=time.time_ns() // 1_000_000,
                 late_threshold_s=self.settings.late_threshold_s,
                 future_skew_s=self.settings.future_skew_s,
             )

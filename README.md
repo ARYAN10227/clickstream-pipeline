@@ -99,8 +99,10 @@ optional header `run_id`.
 | `referrer` | string or null | optional |
 | `schema_version` | int | required, must be 1 |
 
-Events too far in the past or the future go to the DLQ as `late_event` or `future_event`
-(thresholds `LATE_THRESHOLD_S` and `FUTURE_SKEW_S` in `.env`). The ClickHouse table is
+Events whose click time (`event_time`) is too far before or after the moment they were
+produced (`produced_at`) go to the DLQ as `late_event` or `future_event` (thresholds
+`LATE_THRESHOLD_S` and `FUTURE_SKEW_S` in `.env`). This is measured inside the event, so
+pipeline lag or an outage never turns valid clicks into late events. The ClickHouse table is
 [`sql/init/001_create_clicks.sql`](sql/init/001_create_clicks.sql). Correct counts use
 `FINAL` or `uniqExact(event_id)`, never plain `count()`.
 

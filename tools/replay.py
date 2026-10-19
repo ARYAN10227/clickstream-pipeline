@@ -95,6 +95,7 @@ def build_plan(
     late_ms = now_ms - 2 * late_threshold_s * 1000
     for _ in range(n_late):
         event = make_event(rng, late_ms, code_prefix=prefix)
+        event["produced_at"] = now_ms  # clicked long ago, produced now -> late_event
         base.append(PlanItem("late", event["short_code"].encode(), orjson.dumps(event)))
     bad_counts = dict(zip(BAD_REASONS, _split(n_bad, len(BAD_REASONS)), strict=True))
     for reason, count in bad_counts.items():

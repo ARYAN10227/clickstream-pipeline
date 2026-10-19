@@ -31,7 +31,7 @@ def _without(field: str) -> bytes:
 
 
 def _check(raw: bytes) -> Valid | Invalid:
-    return validate(raw, NOW_MS, late_threshold_s=LATE_S, future_skew_s=FUTURE_S)
+    return validate(raw, late_threshold_s=LATE_S, future_skew_s=FUTURE_S)
 
 
 def _reason(result: Valid | Invalid) -> DlqReason | None:
@@ -113,3 +113,12 @@ def test_error_text_is_short_and_never_contains_ip(raw: bytes) -> None:
     assert isinstance(result, Invalid)
     assert len(result.error) <= MAX_ERROR_LEN
     assert IP not in result.error
+
+
+def test_classification_ignores_consumer_clock() -> None:
+    # An on-time event consumed an hour late (outage, backlog) is still valid ...
+    hour_old = _event(event_time=NOW_MS - 3_600_000, produced_at=NOW_MS - 3_600_000)
+    assert isinstance(_check(orjson.dumps(hour_old)), Valid)
+    # ... while an event produced long after its click is late, whenever it is consumed.
+    produced_late = _event(event_time=NOW_MS - 3_600_000, produced_at=NOW_MS)
+    assert _reason(_check(orjson.dumps(produced_late))) is DlqReason.LATE_EVENT
