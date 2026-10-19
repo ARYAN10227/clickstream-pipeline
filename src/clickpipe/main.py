@@ -52,9 +52,17 @@ def main() -> int:
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
 
-    sink = ClickHouseSink(settings)
-    dlq = DlqProducer(settings)
-    consumer = ClickConsumer(settings, sink, dlq)
+    try:
+        sink = ClickHouseSink(settings)
+        dlq = DlqProducer(settings)
+        consumer = ClickConsumer(settings, sink, dlq)
+    except Exception as exc:
+        log.error(
+            "consumer failed to start (%s: %s); exiting with code 1 so it is restarted",
+            type(exc).__name__,
+            exc,
+        )
+        return 1
     log.info(
         "consumer started: topic=%s dlq=%s group=%s bootstrap=%s clickhouse=%s:%d batch=%d/%dms",
         settings.clicks_topic,
@@ -69,8 +77,14 @@ def main() -> int:
     exit_code = 0
     try:
         consumer.run(stop)
-    except Exception:
-        log.exception("consumer stopped on error; uncommitted offsets will be redelivered")
+    except Exception as exc:
+        # Unrecoverable (e.g. inserts still failing after all retries). The failed batch was
+        # NOT committed, and auto-commit is off, so closing below commits nothing: after the
+        # restart (compose restart policy) the same messages are delivered again.
+        log.exception(
+            "consumer stopped on unrecoverable %s; batch not committed, exiting with code 1",
+            type(exc).__name__,
+        )
         exit_code = 1
     finally:
         consumer.close()
@@ -79,7 +93,7 @@ def main() -> int:
         except Exception:
             log.exception("DLQ producer did not flush cleanly on shutdown")
         sink.close()
-        log.info("consumer closed cleanly")
+        log.info("consumer closed (exit code %d)", exit_code)
     return exit_code
 
 

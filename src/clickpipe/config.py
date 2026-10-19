@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     late_threshold_s: int = 300
     future_skew_s: int = 60
 
+    # Insert retries (exponential backoff with jitter)
+    insert_max_retries: int = 8
+    retry_base_s: float = 0.2
+    retry_max_s: float = 5.0
+
     # Observability and enrichment
     metrics_port: int = 9108
     geoip_db_path: str | None = None
