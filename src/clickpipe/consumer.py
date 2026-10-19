@@ -23,6 +23,7 @@ from clickpipe.sink import ClickHouseSink
 
 log = logging.getLogger(__name__)
 
+EVENT_ID = CLICK_COLUMNS.index("event_id")
 PRODUCED_AT = CLICK_COLUMNS.index("produced_at")
 
 
@@ -125,11 +126,13 @@ class ClickConsumer:
             )
             # Any exception below propagates before the commit, so the batch is redelivered.
             if rows:
-                # Token from the messages that produced rows: a retry of this exact batch
-                # gets the same token and ClickHouse skips the duplicate insert (ADR-0003).
+                # Token from the messages that produced rows and their event_ids: a retry
+                # of this exact batch gets the same token and ClickHouse skips the duplicate
+                # insert; different data at reused offsets gets a different one (ADR-0003).
                 invalid_ids = {id(msg) for msg, _, _ in invalid}
                 valid = [m for m in messages if m.error() is None and id(m) not in invalid_ids]
-                token = build_dedup_token(self.settings.clicks_topic, valid)
+                event_ids = [row[EVENT_ID] for row in rows]
+                token = build_dedup_token(self.settings.clicks_topic, valid, event_ids)
                 started = time.perf_counter()
                 self.sink.insert_rows(rows, dedup_token=token)
                 self.metrics.insert_duration.observe(time.perf_counter() - started)

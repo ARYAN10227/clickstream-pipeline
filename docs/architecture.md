@@ -26,7 +26,8 @@ removed by deduplication. ([ADR-0002](decisions/0002-at-least-once-plus-idempote
 5. **Insert.** [`ClickHouseSink.insert_rows`](../src/clickpipe/sink.py) writes the batch's
    valid rows into `analytics.clicks` in one insert.
    - The insert carries an `insert_deduplication_token` built from the partition and offset
-     ranges of the messages that produced rows ([dedup.py](../src/clickpipe/dedup.py)).
+     ranges of the messages that produced rows, plus a hash of those rows' `event_id`s
+     ([dedup.py](../src/clickpipe/dedup.py)).
    - Transient errors are retried with capped exponential backoff and jitter.
 6. **Dead-letter.** [`DlqProducer`](../src/clickpipe/dlq.py) sends each invalid record to
    `clicks-dlq` with the original value, key and headers, plus `dlq_reason`, `error`,
@@ -53,7 +54,7 @@ sequenceDiagram
     RP-->>C: messages
     C->>C: validate + enrich -> rows, invalid[(msg, reason, error)]
     alt rows not empty
-        C->>CH: INSERT rows SETTINGS insert_deduplication_token = "clicks|p0:a-b|p3:c-d"
+        C->>CH: INSERT rows SETTINGS insert_deduplication_token = "clicks|p0:a-b|p3:c-d|h:<event_id hash>"
         Note over C,CH: transient error -> retry with backoff;<br/>still failing -> raise, no commit
         CH-->>C: ok (or skipped as duplicate token)
     end
@@ -91,18 +92,23 @@ sequenceDiagram
 - **What happens:** the rows are in ClickHouse but the offsets are not committed, so after
   the restart the batch is delivered and inserted again.
 - **What protects the data:** two layers.
-  - **Same batch boundaries:** the retried batch has the same partition/offset ranges, so
-    the same dedup token, and ClickHouse skips the insert. Plain `count()` stays correct.
+  - **Same batch boundaries:** the retried batch has the same partition/offset ranges and
+    the same events, so the same dedup token, and ClickHouse skips the insert. Plain
+    `count()` stays correct.
   - **Different boundaries** (for example after a restart the poll returns a different
     slice): the token differs and the rows are stored twice. ReplacingMergeTree collapses
     them on `event_id` at merge time, and `FINAL` / `uniqExact(event_id)` are correct
     immediately.
   - The token window is limited by the table's `non_replicated_deduplication_window`. Older
     retries fall through to layer 2.
+  - Because the token includes a hash of the batch's `event_id`s, new data that happens to
+    reuse old offsets (topic recreated, broker data lost) gets a different token and is not
+    skipped.
 - **Proof:**
   - [tests/integration/test_idempotency.py](../tests/integration/test_idempotency.py)
-    `test_same_token_skips_duplicate_insert` (plain `count()` unchanged) and
-    `test_different_token_duplicates_removed_by_replacing_merge_tree`
+    `test_same_token_skips_duplicate_insert` (plain `count()` unchanged),
+    `test_different_token_duplicates_removed_by_replacing_merge_tree` and
+    `test_reused_offsets_with_new_events_are_not_dropped`
   - [tests/unit/test_consumer.py](../tests/unit/test_consumer.py)
     `test_run_passes_dedup_token_from_valid_messages_only`
   - [tests/e2e/test_crash.py](../tests/e2e/test_crash.py): zero duplicates after kill -9

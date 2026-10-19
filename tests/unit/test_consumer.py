@@ -165,7 +165,8 @@ def test_run_passes_dedup_token_from_valid_messages_only() -> None:
     ]
     consumer, stop, _, sink, _ = _consumer([batch])
     consumer.run(stop)
-    assert sink.tokens == ["clicks|p0:3-3|p1:7-7"]
+    [token] = sink.tokens
+    assert token.startswith("clicks|p0:3-3|p1:7-7|h:")  # invalid p1:8 and the EOF event excluded
 
 
 def test_run_order_is_insert_dlq_send_dlq_flush_commit() -> None:

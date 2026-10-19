@@ -7,8 +7,11 @@ At-least-once delivery (ADR-0002) means duplicates can reach ClickHouse: retried
 replays, producer retries and consumer restarts with different batch boundaries.
 
 ## Decision
-1. Set insert_deduplication_token from each batch's partition/offset ranges, with
-   non_replicated_deduplication_window enabled, so a retried identical batch is skipped.
+1. Set insert_deduplication_token from each batch's partition/offset ranges plus a hash of
+   the batch's event_ids, with non_replicated_deduplication_window enabled, so a retried
+   identical batch is skipped. ClickHouse skips any insert whose token it has seen,
+   whatever the rows contain; the event_id hash keeps new data at reused offsets (topic
+   recreated, broker data lost) from being dropped silently.
 2. Use ReplacingMergeTree with event_id in the sorting key, which collapses duplicates
    from replays, producer retries or restarts with different batch boundaries.
 
