@@ -1,0 +1,16 @@
+{
+  "run_id": "20261019T205727",
+  "prefix": "r767fa",
+  "seed": 42,
+  "n_unique_valid": 1000000,
+  "duplicates_sent": 50000,
+  "bad_by_reason": {
+    "bad_json": 3334,
+    "missing_field": 3333,
+    "schema_invalid": 3333
+  },
+  "late": 10000,
+  "produced_total": 1070000,
+  "started_at": "2026-10-19T20:57:27+00:00",
+  "finished_at": "2026-10-19T20:58:17+00:00"
+}
