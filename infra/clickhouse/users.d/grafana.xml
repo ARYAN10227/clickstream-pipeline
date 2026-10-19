@@ -1,0 +1,23 @@
+<!-- Read-only ClickHouse user for Grafana. Password comes from GRAFANA_CH_PASSWORD. -->
+<clickhouse>
+    <profiles>
+        <!-- readonly=2: SELECT only (no INSERT, ALTER or DDL), but query settings may be
+             changed, which the Grafana ClickHouse plugin needs (e.g. max_execution_time).
+             The built-in "readonly" profile (readonly=1) rejects any setting change. -->
+        <grafana_readonly>
+            <readonly>2</readonly>
+            <max_execution_time>60</max_execution_time>
+        </grafana_readonly>
+    </profiles>
+    <users>
+        <grafana>
+            <password from_env="GRAFANA_CH_PASSWORD"/>
+            <profile>grafana_readonly</profile>
+            <quota>default</quota>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <access_management>0</access_management>
+        </grafana>
+    </users>
+</clickhouse>

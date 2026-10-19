@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     metrics_port: int = 9108
     geoip_db_path: str | None = None
     grafana_admin_password: str = "change_me"
+    grafana_ch_password: str = "grafana_dev"
 
     @field_validator("geoip_db_path", mode="before")
     @classmethod

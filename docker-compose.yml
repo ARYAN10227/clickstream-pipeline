@@ -62,6 +62,7 @@ services:
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickpipe}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickpipe_dev}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      GRAFANA_CH_PASSWORD: ${GRAFANA_CH_PASSWORD:-grafana_dev}
     ports:
       - "8123:8123"
       - "9000:9000"
@@ -73,6 +74,7 @@ services:
       - clickhouse-data:/var/lib/clickhouse
       # *.sql here runs once, on first start with an empty data volume
       - ./sql:/docker-entrypoint-initdb.d:ro
+      - ./infra/clickhouse/users.d/grafana.xml:/etc/clickhouse-server/users.d/grafana.xml:ro
     healthcheck:
       test:
         - CMD-SHELL
@@ -123,7 +125,32 @@ services:
       timeout: 5s
       retries: 30
 
+  grafana:
+    image: grafana/grafana:13.2.4
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change_me}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
+      GRAFANA_CH_PASSWORD: ${GRAFANA_CH_PASSWORD:-grafana_dev}  # used by datasources.yml
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:3000/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
 volumes:
   redpanda-data:
   clickhouse-data:
   prometheus-data:
+  grafana-data:
