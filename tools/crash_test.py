@@ -15,7 +15,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,7 +23,7 @@ from typing import Any
 
 from confluent_kafka import Producer
 
-from clickpipe.config import get_settings
+from clickpipe.config import Settings, get_settings
 from clickpipe.fake import make_event
 from clickpipe.producer import LoadResult, now_ms, send_events
 from clickpipe.stackcheck import clickhouse_counts, wait_for_zero_lag
@@ -135,24 +135,30 @@ def _stamp() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
+REPO_ROOT = RESULTS_DIR.parents[1]
+
+
 def _compose(*args: str) -> None:
-    subprocess.run(["docker", "compose", *args], check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["docker", "compose", *args], check=True, capture_output=True, text=True, cwd=REPO_ROOT
+    )
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Run the crash test and return the exit code."""
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--count", type=int, default=300_000, help="events to produce")
-    parser.add_argument("--rate", type=float, default=20_000, help="events per second")
-    parser.add_argument("--kill-after", type=float, default=5, help="seconds before SIGKILL")
-    parser.add_argument("--restart-after", type=float, default=3, help="seconds before restart")
-    parser.add_argument("--timeout", type=float, default=300, help="seconds to wait for lag 0")
-    args = parser.parse_args(argv)
-
-    settings = get_settings()
+def run_crash_test(
+    count: int = 300_000,
+    rate: float = 20_000,
+    kill_after: float = 5,
+    restart_after: float = 3,
+    timeout_s: float = 300,
+    results_dir: Path = RESULTS_DIR,
+    settings: Settings | None = None,
+    log: Callable[[str], None] = print,
+) -> tuple[CrashResult, list[Check], Path]:
+    """Produce, SIGKILL and restart the consumer, verify; returns (result, checks, report)."""
+    settings = settings or get_settings()
     run_id = "crash-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
     prefix = "k" + hashlib.sha1(run_id.encode()).hexdigest()[:5]
-    print(f"run {run_id}: {args.count:,} events at {args.rate:,.0f}/s, prefix {prefix}")
+    log(f"run {run_id}: {count:,} events at {rate:,.0f}/s, prefix {prefix}")
 
     rng = random.Random()
 
@@ -163,32 +169,31 @@ def main(argv: list[str] | None = None) -> int:
     outcome: dict[str, LoadResult] = {}
 
     def produce() -> None:
-        producer = Producer(settings.producer_config())
         outcome["load"] = send_events(
-            producer,
+            Producer(settings.producer_config()),
             settings.clicks_topic,
-            itertools.islice(events(), args.count),
-            rate=args.rate,
+            itertools.islice(events(), count),
+            rate=rate,
             headers=[("run_id", run_id.encode())],
         )
 
     sender = threading.Thread(target=produce, daemon=True)
     sender.start()
 
-    time.sleep(args.kill_after)
+    time.sleep(kill_after)
     _compose("kill", "-s", "SIGKILL", "consumer")
     killed_at = _stamp()
-    print(f"{killed_at}  consumer killed with SIGKILL")
-    time.sleep(args.restart_after)
+    log(f"{killed_at}  consumer killed with SIGKILL")
+    time.sleep(restart_after)
     _compose("start", "consumer")
     restarted_at = _stamp()
-    print(f"{restarted_at}  consumer started again")
+    log(f"{restarted_at}  consumer started again")
 
     sender.join()
     load = outcome["load"]
-    print(f"producer done: {load.sent:,} sent, {load.delivery_errors} delivery errors")
+    log(f"producer done: {load.sent:,} sent, {load.delivery_errors} delivery errors")
 
-    lag = wait_for_zero_lag(settings, args.timeout)
+    lag = wait_for_zero_lag(settings, timeout_s)
     raw, final, unique = clickhouse_counts(settings, prefix)
     result = CrashResult(
         run_id=run_id,
@@ -203,13 +208,32 @@ def main(argv: list[str] | None = None) -> int:
         lag_at_end=lag,
     )
     checks = build_checks(result)
+    results_dir.mkdir(parents=True, exist_ok=True)
+    report = results_dir / f"crash-{run_id.removeprefix('crash-')}.md"
+    report.write_text(render_markdown(result, checks))
+    return result, checks, report
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the crash test and return the exit code."""
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--count", type=int, default=300_000, help="events to produce")
+    parser.add_argument("--rate", type=float, default=20_000, help="events per second")
+    parser.add_argument("--kill-after", type=float, default=5, help="seconds before SIGKILL")
+    parser.add_argument("--restart-after", type=float, default=3, help="seconds before restart")
+    parser.add_argument("--timeout", type=float, default=300, help="seconds to wait for lag 0")
+    args = parser.parse_args(argv)
+
+    result, checks, report = run_crash_test(
+        args.count, args.rate, args.kill_after, args.restart_after, args.timeout
+    )
     print()
     print(render_text(result, checks))
-
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    report = RESULTS_DIR / f"crash-{run_id.removeprefix('crash-')}.md"
-    report.write_text(render_markdown(result, checks))
-    print(f"\nreport: {report.relative_to(RESULTS_DIR.parents[1])}")
+    try:
+        shown = report.relative_to(REPO_ROOT)
+    except ValueError:
+        shown = report
+    print(f"\nreport: {shown}")
     return exit_code(checks)
 
 

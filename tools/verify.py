@@ -14,6 +14,7 @@ import sys
 import time
 import uuid
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -178,6 +179,42 @@ def dlq_counts(settings: Settings, run_id: str, timeout_s: float = 120) -> dict[
     return dict(counts)
 
 
+@dataclass
+class VerifyResult:
+    """Outcome of verify()."""
+
+    checks: list[Check]
+    info: list[tuple[str, int]]
+    report_path: Path
+
+    @property
+    def passed(self) -> bool:
+        return exit_code(self.checks) == 0
+
+
+def verify(
+    manifest: dict[str, Any],
+    timeout_s: float = 300,
+    results_dir: Path = RESULTS_DIR,
+    settings: Settings | None = None,
+    log: Callable[[str], None] = print,
+) -> VerifyResult:
+    """Wait for lag 0, measure the run, write verify-<run_id>.md to results_dir."""
+    settings = settings or get_settings()
+    log(f"verifying run {manifest['run_id']} (prefix {manifest['prefix']})")
+    lag = wait_for_zero_lag(settings, timeout_s)
+    raw, final, unique = clickhouse_counts(settings, manifest["prefix"])
+    actual = Actual(raw, final, unique, dlq_counts(settings, manifest["run_id"]))
+
+    checks = build_checks(manifest, actual)
+    info = info_rows(actual) + [("consumer lag at verification", lag)]
+    verified_at = datetime.now(UTC).isoformat(timespec="seconds")
+    results_dir.mkdir(parents=True, exist_ok=True)
+    report = results_dir / f"verify-{manifest['run_id']}.md"
+    report.write_text(render_markdown(manifest, checks, info, verified_at))
+    return VerifyResult(checks, info, report)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the verification and return the exit code."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -185,25 +222,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=float, default=300, help="seconds to wait for lag 0")
     args = parser.parse_args(argv)
 
-    manifest = orjson.loads(args.manifest.read_bytes())
-    settings = get_settings()
-    print(f"verifying run {manifest['run_id']} (prefix {manifest['prefix']})")
-
-    lag = wait_for_zero_lag(settings, args.timeout)
-    raw, final, unique = clickhouse_counts(settings, manifest["prefix"])
-    actual = Actual(raw, final, unique, dlq_counts(settings, manifest["run_id"]))
-
-    checks = build_checks(manifest, actual)
-    info = info_rows(actual) + [("consumer lag at verification", lag)]
+    result = verify(orjson.loads(args.manifest.read_bytes()), timeout_s=args.timeout)
     print()
-    print(render_table(checks, info))
-
-    verified_at = datetime.now(UTC).isoformat(timespec="seconds")
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    report = RESULTS_DIR / f"verify-{manifest['run_id']}.md"
-    report.write_text(render_markdown(manifest, checks, info, verified_at))
-    print(f"\nreport: {report.relative_to(RESULTS_DIR.parents[1])}")
-    return exit_code(checks)
+    print(render_table(result.checks, result.info))
+    try:
+        shown = result.report_path.relative_to(RESULTS_DIR.parents[1])
+    except ValueError:
+        shown = result.report_path
+    print(f"\nreport: {shown}")
+    return exit_code(result.checks)
 
 
 if __name__ == "__main__":

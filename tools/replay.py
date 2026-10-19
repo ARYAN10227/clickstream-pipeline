@@ -21,7 +21,7 @@ from typing import Any
 import orjson
 from confluent_kafka import KafkaError, Message, Producer
 
-from clickpipe.config import get_settings
+from clickpipe.config import Settings, get_settings
 from clickpipe.fake import make_event
 from clickpipe.producer import now_ms, produce_with_retry
 
@@ -191,49 +191,80 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Plan, send and write the manifest; exit code 1 on delivery errors."""
-    args = parse_args(argv)
-    settings = get_settings()
-    prefix = make_prefix(args.run_id)
+@dataclass
+class ReplayResult:
+    """Outcome of run_replay()."""
+
+    manifest: dict[str, Any]
+    manifest_path: Path
+    kinds: Counter[str]
+    delivery_errors: int
+    elapsed_s: float
+
+
+def run_replay(
+    n: int,
+    dup: float,
+    bad: float,
+    late: float,
+    seed: int,
+    run_id: str,
+    bootstrap: str | None = None,
+    results_dir: Path = RESULTS_DIR,
+    settings: Settings | None = None,
+) -> ReplayResult:
+    """Plan and send a replay run, write replay-<run_id>.json to results_dir, return it."""
+    settings = settings or get_settings()
+    prefix = make_prefix(run_id)
     started = datetime.now(UTC)
     plan = build_plan(
-        args.n,
-        args.dup,
-        args.bad,
-        args.late,
-        args.seed,
-        prefix,
-        now_ms(),
-        late_threshold_s=settings.late_threshold_s,
+        n, dup, bad, late, seed, prefix, now_ms(), late_threshold_s=settings.late_threshold_s
     )
-    producer = Producer(settings.producer_config() | {"bootstrap.servers": args.bootstrap})
-    sent, errors, kinds = send_plan(producer, settings.clicks_topic, plan, args.run_id)
+    config = settings.producer_config() | {
+        "bootstrap.servers": bootstrap or settings.kafka_bootstrap
+    }
+    _, errors, kinds = send_plan(Producer(config), settings.clicks_topic, plan, run_id)
     finished = datetime.now(UTC)
 
     manifest = {
-        "run_id": args.run_id,
+        "run_id": run_id,
         "prefix": prefix,
-        "seed": args.seed,
+        "seed": seed,
         **plan.counts,
         "started_at": started.isoformat(timespec="seconds"),
         "finished_at": finished.isoformat(timespec="seconds"),
     }
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    path = RESULTS_DIR / f"replay-{args.run_id}.json"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    path = results_dir / f"replay-{run_id}.json"
     path.write_bytes(orjson.dumps(manifest, option=orjson.OPT_INDENT_2) + b"\n")
+    return ReplayResult(manifest, path, kinds, errors, (finished - started).total_seconds())
 
-    elapsed = (finished - started).total_seconds()
-    print(f"run_id:           {args.run_id}  (prefix {prefix})")
+
+def display_path(path: Path) -> str:
+    """Path relative to the repository root when possible."""
+    try:
+        return str(path.relative_to(RESULTS_DIR.parents[1]))
+    except ValueError:
+        return str(path)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Plan, send and write the manifest; exit code 1 on delivery errors."""
+    args = parse_args(argv)
+    result = run_replay(
+        args.n, args.dup, args.bad, args.late, args.seed, args.run_id, bootstrap=args.bootstrap
+    )
+    kinds, elapsed, sent = result.kinds, result.elapsed_s, sum(result.kinds.values())
+    print(f"run_id:           {args.run_id}  (prefix {result.manifest['prefix']})")
     print(f"sent:             {sent} in {elapsed:.1f} s ({sent / max(elapsed, 1e-9):,.0f} msg/s)")
     print(f"  valid:          {kinds['valid']}")
     print(f"  duplicates:     {kinds['dup']}")
     print(f"  late:           {kinds['late']}")
     for reason in BAD_REASONS:
         print(f"  {reason + ':':<16}{kinds[reason]}")
-    print(f"delivery errors:  {errors}")
-    print(f"manifest:         {path.relative_to(RESULTS_DIR.parents[1])}")
-    return 1 if errors else 0
+    print(f"delivery errors:  {result.delivery_errors}")
+    print(f"manifest:         {display_path(result.manifest_path)}")
+    return 1 if result.delivery_errors else 0
 
 
 if __name__ == "__main__":
