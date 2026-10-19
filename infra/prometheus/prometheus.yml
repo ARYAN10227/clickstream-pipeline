@@ -1,0 +1,17 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # Every consumer replica: the "consumer" DNS name resolves to all scaled containers.
+  - job_name: consumer
+    dns_sd_configs:
+      - names: [consumer]
+        type: A
+        port: 9108
+        refresh_interval: 5s
+
+  - job_name: redpanda
+    metrics_path: /public_metrics
+    static_configs:
+      - targets: ["redpanda:9644"]
