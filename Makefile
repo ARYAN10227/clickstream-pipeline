@@ -34,8 +34,7 @@ fmt: ## Format code and apply ruff autofixes
 	uv run ruff format . && uv run ruff check --fix .
 
 up: ## Start the local stack (Redpanda, ClickHouse, Prometheus, Grafana)
-	docker compose up -d --wait redpanda clickhouse
-	docker compose run --rm redpanda-init
+	docker compose up -d --build --wait
 	$(MAKE) smoke
 
 down: ## Stop the local stack

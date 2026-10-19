@@ -82,6 +82,23 @@ services:
       retries: 30
       start_period: 10s
 
+  consumer:
+    build:
+      context: .
+      dockerfile: docker/consumer.Dockerfile
+    env_file: .env
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      CLICKHOUSE_HOST: clickhouse
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
 volumes:
   redpanda-data:
   clickhouse-data:
