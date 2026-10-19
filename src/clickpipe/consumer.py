@@ -12,14 +12,18 @@ from collections.abc import Sequence
 from typing import Any
 
 from confluent_kafka import Consumer, KafkaError, KafkaException, Message, TopicPartition
+from prometheus_client import CollectorRegistry
 
 from clickpipe.config import Settings
 from clickpipe.dedup import build_dedup_token
 from clickpipe.dlq import DlqProducer
-from clickpipe.schema import DlqReason, Invalid, to_row, validate
+from clickpipe.metrics import Metrics
+from clickpipe.schema import CLICK_COLUMNS, DlqReason, Invalid, to_row, validate
 from clickpipe.sink import ClickHouseSink
 
 log = logging.getLogger(__name__)
+
+PRODUCED_AT = CLICK_COLUMNS.index("produced_at")
 
 
 def _describe(partitions: list[TopicPartition]) -> str:
@@ -67,11 +71,16 @@ class ClickConsumer:
         sink: ClickHouseSink,
         dlq: DlqProducer,
         consumer: Consumer | None = None,
+        metrics: Metrics | None = None,
     ) -> None:
-        """Use the injected consumer, or create one from settings and subscribe to clicks."""
+        """Use the injected consumer, or create one from settings and subscribe to clicks.
+
+        Without `metrics`, collectors go to a private registry (not exported).
+        """
         self.settings = settings
         self.sink = sink
         self.dlq = dlq
+        self.metrics = metrics or Metrics(CollectorRegistry())
         if consumer is None:
             consumer = Consumer(settings.consumer_config())
             consumer.subscribe(
@@ -102,8 +111,12 @@ class ClickConsumer:
                 num_messages=self.settings.batch_max_size,
                 timeout=self.settings.batch_max_wait_ms / 1000,
             )
+            self.metrics.maybe_refresh_lag(self.consumer)  # rate-limited, same thread
             if not messages:
                 continue
+            consumed = sum(1 for m in messages if m.error() is None)
+            self.metrics.events_consumed.inc(consumed)
+            self.metrics.batch_size.observe(consumed)
             rows, invalid = process_batch(
                 messages,
                 now_ms=time.time_ns() // 1_000_000,
@@ -117,11 +130,17 @@ class ClickConsumer:
                 invalid_ids = {id(msg) for msg, _, _ in invalid}
                 valid = [m for m in messages if m.error() is None and id(m) not in invalid_ids]
                 token = build_dedup_token(self.settings.clicks_topic, valid)
+                started = time.perf_counter()
                 self.sink.insert_rows(rows, dedup_token=token)
+                self.metrics.insert_duration.observe(time.perf_counter() - started)
+                self.metrics.events_inserted.inc(len(rows))
+                self.metrics.observe_e2e_latency([row[PRODUCED_AT] for row in rows])
             for msg, reason, error in invalid:
                 self.dlq.send(msg, reason, error)
             if invalid:
                 self.dlq.flush()  # raises DlqFlushError unless every DLQ record is delivered
+                for _, reason, _ in invalid:
+                    self.metrics.events_dlq.labels(reason=reason.value).inc()
             # Commit only AFTER rows are stored and DLQ records are confirmed. This gives
             # at-least-once delivery: if we crash before the commit, the batch is redelivered
             # and re-processed; idempotent storage (dedup tokens + ReplacingMergeTree on

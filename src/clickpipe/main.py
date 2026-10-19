@@ -8,10 +8,12 @@ from datetime import UTC, datetime
 from types import FrameType
 
 import orjson
+from prometheus_client import start_http_server
 
 from clickpipe.config import get_settings
 from clickpipe.consumer import ClickConsumer
 from clickpipe.dlq import DlqProducer
+from clickpipe.metrics import Metrics
 from clickpipe.sink import ClickHouseSink
 
 log = logging.getLogger("clickpipe")
@@ -55,7 +57,8 @@ def main() -> int:
     try:
         sink = ClickHouseSink(settings)
         dlq = DlqProducer(settings)
-        consumer = ClickConsumer(settings, sink, dlq)
+        consumer = ClickConsumer(settings, sink, dlq, metrics=Metrics())
+        start_http_server(settings.metrics_port)
     except Exception as exc:
         log.error(
             "consumer failed to start (%s: %s); exiting with code 1 so it is restarted",
@@ -64,7 +67,8 @@ def main() -> int:
         )
         return 1
     log.info(
-        "consumer started: topic=%s dlq=%s group=%s bootstrap=%s clickhouse=%s:%d batch=%d/%dms",
+        "consumer started: topic=%s dlq=%s group=%s bootstrap=%s clickhouse=%s:%d batch=%d/%dms "
+        "metrics=:%d",
         settings.clicks_topic,
         settings.dlq_topic,
         settings.consumer_group,
@@ -73,6 +77,7 @@ def main() -> int:
         settings.clickhouse_port,
         settings.batch_max_size,
         settings.batch_max_wait_ms,
+        settings.metrics_port,
     )
     exit_code = 0
     try:
