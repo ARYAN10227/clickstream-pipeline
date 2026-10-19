@@ -63,5 +63,5 @@ replay: ## Replay N events with duplicates/bad/late records, then verify (N, DUP
 	uv run python tools/replay.py --n $(N) --dup $(DUP) --bad $(BAD) --late $(LATE)
 	uv run python tools/verify.py --manifest "$$(ls -t docs/results/replay-*.json | head -n 1)"
 
-crash-test: ## kill -9 the consumer mid-run and check for zero loss
-	@echo "not implemented yet (step 27)"; exit 1
+crash-test: ## kill -9 the consumer mid-run, restart it and check for zero loss
+	uv run python tools/crash_test.py

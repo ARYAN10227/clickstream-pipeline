@@ -40,3 +40,4 @@ node_modules
 # replay manifests and verify reports from trial runs (real results are committed explicitly later)
 docs/results/replay-*.json
 docs/results/verify-*.md
+docs/results/crash-*.md
