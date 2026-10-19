@@ -34,19 +34,20 @@ fmt: ## Format code and apply ruff autofixes
 	uv run ruff format . && uv run ruff check --fix .
 
 up: ## Start the local stack (Redpanda, ClickHouse, Prometheus, Grafana)
-	@echo "not implemented yet (step 5)"; exit 1
+	docker compose up -d --wait
 
 down: ## Stop the local stack
-	@echo "not implemented yet (step 5)"; exit 1
+	docker compose down
 
 logs: ## Tail logs from the local stack
-	@echo "not implemented yet (step 5)"; exit 1
+	docker compose logs -f --tail=100
 
 ps: ## Show local stack container status
-	@echo "not implemented yet (step 5)"; exit 1
+	docker compose ps
 
-topics: ## Create/list Redpanda topics (clicks, clicks-dlq)
-	@echo "not implemented yet (step 5)"; exit 1
+topics: ## List Redpanda topics and describe clicks
+	docker compose exec redpanda rpk topic list
+	docker compose exec redpanda rpk topic describe clicks
 
 ch: ## Open a ClickHouse client shell
 	@echo "not implemented yet (step 6)"; exit 1

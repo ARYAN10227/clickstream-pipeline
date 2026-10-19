@@ -1,0 +1,59 @@
+name: clickpipe
+
+services:
+  redpanda:
+    image: redpandadata/redpanda:v26.2.5
+    command:
+      - redpanda
+      - start
+      - --mode
+      - dev-container
+      - --smp
+      - "2"
+      - --memory
+      - 2G
+      - --overprovisioned
+      # internal listener for other containers, external listener for tools on the host
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "19092:19092"
+      - "9644:9644"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -Eq '^Healthy:[[:space:]]+true' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  redpanda-init:
+    image: redpandadata/redpanda:v26.2.5
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/bash", "-c"]
+    # Idempotent: creates each topic only if missing, then (re)applies retention.
+    command:
+      - |
+        set -euo pipefail
+        BROKERS="-X brokers=redpanda:9092"
+        ensure_topic() {
+          local name=$$1 partitions=$$2 retention_ms=$$3
+          if rpk topic list $$BROKERS | awk 'NR>1 {print $$1}' | grep -qx "$$name"; then
+            echo "topic $$name already exists"
+          else
+            rpk topic create "$$name" -p "$$partitions" -r 1 $$BROKERS
+          fi
+          rpk topic alter-config "$$name" --set retention.ms="$$retention_ms" $$BROKERS
+        }
+        ensure_topic clicks 6 604800000       # 7 days
+        ensure_topic clicks-dlq 1 1209600000  # 14 days
+        rpk topic list $$BROKERS
+
+volumes:
+  redpanda-data:
