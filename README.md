@@ -67,9 +67,11 @@ each produce a committed PASS/FAIL report.
 
 <div align="center">
 
-[![ClickPipe demo video](https://img.youtube.com/vi/em_TnU8WQkU/maxresdefault.jpg)](https://youtu.be/em_TnU8WQkU)
+[![ClickPipe demo](docs/img/demo.gif)](https://youtu.be/em_TnU8WQkU)
 
-*Click to watch: live dashboards, a duplicate-heavy replay, and a `kill -9` crash test with zero data loss.*
+*Live dashboards, a duplicate-heavy replay, and a `kill -9` crash test with zero data loss.*
+
+**[▶️ Watch the full 2-minute demo on YouTube](https://youtu.be/em_TnU8WQkU)**
 
 </div>
 
