@@ -13,13 +13,13 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Kafka / Redpanda
-    kafka_bootstrap: str = "localhost:19092"
+    kafka_bootstrap: str = "127.0.0.1:19092"
     clicks_topic: str = "clicks"
     dlq_topic: str = "clicks-dlq"
     consumer_group: str = "clickpipe"
 
     # ClickHouse
-    clickhouse_host: str = "localhost"
+    clickhouse_host: str = "127.0.0.1"
     clickhouse_port: int = 8123
     clickhouse_user: str = "clickpipe"
     clickhouse_password: str = "clickpipe_dev"

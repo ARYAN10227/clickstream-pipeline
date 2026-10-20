@@ -15,7 +15,7 @@ Redpanda/Kafka topic `clicks`, using the event schema in the repository's `SPEC.
 
 ```js
 import { createClickProducer } from './integrations/node-producer/clickProducer.js';
-const clicks = createClickProducer({ brokers: ['localhost:19092'] });
+const clicks = createClickProducer({ brokers: ['127.0.0.1:19092'] });
 clicks.recordClick(req, req.params.code); // in the /:code handler, right after res.redirect(302, url)
 ```
 
@@ -24,6 +24,6 @@ clicks.recordClick(req, req.params.code); // in the /:code handler, right after 
 ```sh
 npm install
 npm test                                        # node:test, no broker needed
-KAFKA_BROKERS=localhost:19092 node example/server.js   # needs `make up` in the repo root
+KAFKA_BROKERS=127.0.0.1:19092 node example/server.js   # needs `make up` in the repo root
 curl -i http://localhost:3000/abc5              # 302 to https://example.com
 ```

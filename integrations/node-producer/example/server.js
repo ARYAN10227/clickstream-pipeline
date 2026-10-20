@@ -1,9 +1,9 @@
 // Tiny URL-shortener stand-in: every /:code redirects, then records the click.
-// Run: KAFKA_BROKERS=localhost:19092 PORT=3000 node example/server.js
+// Run: KAFKA_BROKERS=127.0.0.1:19092 PORT=3000 node example/server.js
 import express from 'express';
 import { createClickProducer } from '../clickProducer.js';
 
-const brokers = (process.env.KAFKA_BROKERS ?? 'localhost:19092').split(',');
+const brokers = (process.env.KAFKA_BROKERS ?? '127.0.0.1:19092').split(',');
 const port = Number(process.env.PORT ?? 3000);
 const clicks = createClickProducer({ brokers });
 
