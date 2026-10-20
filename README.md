@@ -17,6 +17,8 @@
 
 **20,000 events/s** sustained · **p99 397 ms** end-to-end · **0 duplicates** in a 1M-event replay · **0 lost** after `kill -9`
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/ARYAN10227/clickstream-pipeline?quickstart=1)
+
 <img src="docs/img/click-analytics.png" alt="Click Analytics dashboard" width="100%"/>
 
 </div>
@@ -106,6 +108,16 @@ The full sequence and every failure scenario are in [docs/architecture.md](docs/
 - **✅ Proof built in** — `make bench`, `make replay` and `make crash-test` each write a PASS/FAIL report.
 
 ## 🚀 Quick start
+
+### ☁️ Try it in your browser (no install)
+
+Click **[Open in GitHub Codespaces](https://codespaces.new/ARYAN10227/clickstream-pipeline?quickstart=1)**.
+The whole stack starts by itself in about 3–5 minutes, and Grafana opens on port 3000
+(`admin` / `change_me`). Then run `uv run python tools/loadgen.py --rate 2000 --duration 120`
+in the terminal and watch the dashboards fill. It runs on your own free Codespaces quota
+(4-core machine) — stop the Codespace when you're done.
+
+### 💻 Run it locally
 
 Needs **Docker** (with Compose) and **[uv](https://docs.astral.sh/uv/)**.
 
