@@ -17,6 +17,7 @@
 
 **20,000 events/s** sustained · **p99 397 ms** end-to-end · **0 duplicates** in a 1M-event replay · **0 lost** after `kill -9`
 
+[![Watch the demo](https://img.shields.io/badge/▶_Watch_the_demo-YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/em_TnU8WQkU)
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/ARYAN10227/clickstream-pipeline?quickstart=1)
 
 <img src="docs/img/click-analytics.png" alt="Click Analytics dashboard" width="100%"/>
@@ -32,6 +33,16 @@ A user opens a short link → the [URL shortener](https://github.com/ARYAN10227/
 stores it in **ClickHouse** → **Grafana** shows live analytics and pipeline health.
 
 Bad or late events are never silently dropped: they go to a **dead-letter topic** with the reason attached.
+
+## 🎬 Demo
+
+<div align="center">
+
+[![ClickPipe demo video](https://img.youtube.com/vi/em_TnU8WQkU/maxresdefault.jpg)](https://youtu.be/em_TnU8WQkU)
+
+*Click to watch: live dashboards, a duplicate-heavy replay, and a `kill -9` crash test with zero data loss.*
+
+</div>
 
 ## 📊 Results
 
