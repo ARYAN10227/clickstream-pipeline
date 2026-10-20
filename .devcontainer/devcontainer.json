@@ -1,0 +1,28 @@
+{
+  "name": "ClickPipe",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "16gb"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" }
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "postStartCommand": "make up",
+  "forwardPorts": [3000, 9090, 8123],
+  "portsAttributes": {
+    "3000": { "label": "Grafana", "onAutoForward": "openBrowser" },
+    "9090": { "label": "Prometheus", "onAutoForward": "silent" },
+    "8123": { "label": "ClickHouse", "onAutoForward": "silent" }
+  },
+  "customizations": {
+    "codespaces": {
+      "openFiles": ["README.md"]
+    },
+    "vscode": {
+      "extensions": ["ms-python.python", "charliermarsh.ruff"]
+    }
+  }
+}
