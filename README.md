@@ -41,7 +41,7 @@
 
 ## 📖 What it does
 
-A user opens a short link → the [URL shortener](https://github.com/ARYAN10227/url-shortener) fires a click event
+A user opens a short link → the [URL shortener](https://url-shortener-frontend-t-aryan.vercel.app) ([API](https://github.com/ARYAN10227/url-shortener-api) · [frontend](https://github.com/ARYAN10227/url-shortener-frontend)) fires a click event
 (without slowing the redirect) → **Redpanda** buffers it → a **Python consumer** validates, enriches and
 stores it in **ClickHouse** → **Grafana** shows live analytics and pipeline health.
 
