@@ -7,7 +7,9 @@ from functools import lru_cache
 from typing import Any
 
 MAX_CODE_LEN = 16
+CODE_LEN = 6  # like real shorteners, e.g. "aZ3kQ9"
 CODE_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+DEFAULT_POOL_SEED = 0
 CODE_PREFIX_RE = re.compile(r"^[A-Za-z0-9_-]*$")
 ZIPF_EXPONENT = 1.1  # popularity skew: rank 1 is ~2x rank 2, ~10x rank 8
 
@@ -50,28 +52,32 @@ PUBLIC_FIRST_OCTETS: tuple[int, ...] = tuple(
 )
 
 
-def _encode(index: int) -> str:
-    """Encode a non-negative integer as a base62 string."""
-    digits = []
-    while True:
-        index, rem = divmod(index, len(CODE_CHARS))
-        digits.append(CODE_CHARS[rem])
-        if index == 0:
-            return "".join(reversed(digits))
-
-
 @lru_cache(maxsize=32)
-def _code_pool(n_codes: int) -> tuple[tuple[str, ...], tuple[float, ...]]:
-    """Return (codes, cumulative Zipf weights) for a pool of n_codes links."""
+def _code_pool(n_codes: int, pool_seed: int) -> tuple[tuple[str, ...], tuple[float, ...]]:
+    """Return (codes, cumulative Zipf weights) for a pool of n_codes links.
+
+    Codes are distinct 6-character base62 strings derived only from pool_seed, so every
+    process (parallel producers, replays, tests) sees the same set of links; the pool's
+    order is its popularity rank.
+    """
     if n_codes < 1:
         raise ValueError("n_codes must be >= 1")
-    codes = tuple(_encode(i) for i in range(n_codes))
+    if n_codes > len(CODE_CHARS) ** CODE_LEN // 1000:
+        raise ValueError(f"n_codes {n_codes} is too large for {CODE_LEN}-character codes")
+    rng = random.Random(f"clickpipe-short-codes:{pool_seed}")
+    seen: set[str] = set()
+    codes: list[str] = []
+    while len(codes) < n_codes:
+        code = "".join(rng.choices(CODE_CHARS, k=CODE_LEN))
+        if code not in seen:
+            seen.add(code)
+            codes.append(code)
     cum: list[float] = []
     total = 0.0
     for rank in range(1, n_codes + 1):
         total += 1.0 / rank**ZIPF_EXPONENT
         cum.append(total)
-    return codes, tuple(cum)
+    return tuple(codes), tuple(cum)
 
 
 def _public_ipv4(rng: random.Random) -> str:
@@ -83,17 +89,25 @@ def _public_ipv4(rng: random.Random) -> str:
 
 
 def make_event(
-    rng: random.Random, now_ms: int, code_prefix: str = "", n_codes: int = 1000
+    rng: random.Random,
+    now_ms: int,
+    code_prefix: str = "",
+    n_codes: int = 1000,
+    pool_seed: int = DEFAULT_POOL_SEED,
 ) -> dict[str, Any]:
-    """Return one valid ClickEvent dict; output depends only on rng state and arguments."""
-    codes, cum_weights = _code_pool(n_codes)
+    """Return one valid ClickEvent dict; output depends only on rng state and arguments.
+
+    short_code is code_prefix + one of n_codes 6-character base62 codes derived from
+    pool_seed, picked with a skewed (Zipf) popularity.
+    """
     if not CODE_PREFIX_RE.match(code_prefix):
         raise ValueError(f"code_prefix {code_prefix!r} may only contain A-Z a-z 0-9 _ -")
-    if len(code_prefix) + len(codes[-1]) > MAX_CODE_LEN:
+    if len(code_prefix) + CODE_LEN > MAX_CODE_LEN:
         raise ValueError(
-            f"code_prefix {code_prefix!r} is too long for {n_codes} codes "
-            f"(short_code would exceed {MAX_CODE_LEN} characters)"
+            f"code_prefix {code_prefix!r} is too long: prefix + {CODE_LEN}-character code "
+            f"would exceed {MAX_CODE_LEN} characters"
         )
+    codes, cum_weights = _code_pool(n_codes, pool_seed)
     code = rng.choices(codes, cum_weights=cum_weights)[0]
     return {
         "event_id": str(uuid.UUID(int=rng.getrandbits(128), version=4)),
