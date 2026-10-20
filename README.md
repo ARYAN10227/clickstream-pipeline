@@ -263,6 +263,11 @@ docs/                       architecture, design decisions, results, demo script
 - [docs/demo.md](docs/demo.md) — the demo script
 - [CHANGELOG.md](CHANGELOG.md) — full history by commit type
 
+## 🔗 Related projects
+
+- [**Shortly**](https://url-shortener-frontend-t-aryan.vercel.app) — the live URL shortener whose clicks this pipeline ingests
+  ([frontend](https://github.com/ARYAN10227/url-shortener-frontend) · [API](https://github.com/ARYAN10227/url-shortener-api))
+
 ## 📄 License
 
 [MIT](LICENSE) © 2026 Aryan Raj
