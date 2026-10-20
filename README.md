@@ -14,6 +14,8 @@
 ![Prometheus](https://img.shields.io/badge/Prometheus-Metrics-E6522C?logo=prometheus&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![Coverage](https://img.shields.io/badge/coverage-82.66%25-brightgreen)
+![Version](https://img.shields.io/badge/version-v1.0.0-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **20,000 events/s** sustained · **p99 397 ms** end-to-end · **0 duplicates** in a 1M-event replay · **0 lost** after `kill -9`
 
@@ -26,6 +28,17 @@
 
 ---
 
+<p align="center">
+<a href="#-what-it-does">What it does</a> ·
+<a href="#-demo">Demo</a> ·
+<a href="#-results">Results</a> ·
+<a href="#%EF%B8%8F-architecture">Architecture</a> ·
+<a href="#-quick-start">Quick start</a> ·
+<a href="#-how-correctness-is-proven">Correctness</a> ·
+<a href="#-design-decisions">Design decisions</a> ·
+<a href="#%EF%B8%8F-performance-work">Performance</a>
+</p>
+
 ## 📖 What it does
 
 A user opens a short link → the [URL shortener](https://github.com/ARYAN10227/url-shortener) fires a click event
@@ -33,6 +46,22 @@ A user opens a short link → the [URL shortener](https://github.com/ARYAN10227/
 stores it in **ClickHouse** → **Grafana** shows live analytics and pipeline health.
 
 Bad or late events are never silently dropped: they go to a **dead-letter topic** with the reason attached.
+
+**Why it's interesting:** streaming systems fail in boring, expensive ways — a consumer crashes between
+writing and committing, a producer retries, someone replays a topic. ClickPipe is built around those
+failures and **proves** it handles them, with a replay test, a `kill -9` crash test and a load test that
+each produce a committed PASS/FAIL report.
+
+### 🧰 Tech stack
+
+| Layer | Technology |
+|---|---|
+| Event log | **Redpanda** (Kafka API), single node, 6 partitions |
+| Processing | **Python 3.12** · confluent-kafka · Pydantic v2 · orjson |
+| Storage | **ClickHouse** (ReplacingMergeTree) via clickhouse-connect |
+| Observability | **Prometheus** + **Grafana** (dashboards provisioned as code) |
+| Producer | **Node.js** hook for the URL shortener (`@confluentinc/kafka-javascript`) |
+| Tooling | Docker Compose · uv · pytest + testcontainers · ruff · py-spy · GitHub Actions |
 
 ## 🎬 Demo
 
@@ -70,7 +99,10 @@ one machine and **1 consumer replica**. Every number links to the file it came f
 <table>
 <tr>
 <td width="50%"><b>Pipeline Ops</b> — throughput, consumer lag, DLQ rate by reason, latency percentiles<br/><img src="docs/img/pipeline-ops.png" alt="Pipeline Ops dashboard"/></td>
-<td width="50%"><b>Prometheus targets</b> — consumer and Redpanda both scraped and healthy<br/><img src="docs/img/prometheus-targets.png" alt="Prometheus targets"/></td>
+<td width="50%"><b>Click Analytics</b> — clicks per minute, top links, referrers, devices, browsers<br/><img src="docs/img/click-analytics.png" alt="Click Analytics dashboard"/></td>
+</tr>
+<tr>
+<td colspan="2" align="center"><b>Prometheus targets</b> — consumer and Redpanda both scraped and healthy<br/><img src="docs/img/prometheus-targets.png" alt="Prometheus targets" width="70%"/></td>
 </tr>
 </table>
 
@@ -220,6 +252,18 @@ sql/                        ClickHouse schema and dashboard queries
 tests/                      unit, integration, e2e
 docs/                       architecture, design decisions, results, demo script
 ```
+
+## 📚 Further reading
+
+- [docs/architecture.md](docs/architecture.md) — batch sequence and every failure scenario, each linked to the test that proves it
+- [docs/decisions/](docs/decisions) — the five architecture decision records
+- [docs/results/](docs/results/README.md) — every benchmark, replay and crash report, including the failed and contaminated runs
+- [docs/demo.md](docs/demo.md) — the demo script
+- [CHANGELOG.md](CHANGELOG.md) — full history by commit type
+
+## 📄 License
+
+[MIT](LICENSE) © 2026 Aryan Raj
 
 ---
 
